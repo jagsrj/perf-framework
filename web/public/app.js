@@ -408,7 +408,14 @@ function renderResultsReport({ run, baseline }) {
         }).join('')}</tbody>
       </table>
     </div>
-    <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>`;
+    <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>
+    ${run.status === 'completed' ? `
+      <div class="ai-analysis-controls">
+        <button class="secondary" type="button" data-ai-analyze="${escapeHtml(run.run_id)}">Explain with local AI</button>
+        <span class="muted">Ollama receives summary metrics only. Its response is advisory and is not saved.</span>
+      </div>
+      <section id="ai-analysis-output" class="ai-analysis-output" aria-live="polite" hidden></section>
+    ` : ''}`;
 }
 
 async function loadSelectedResults(runId) {
@@ -424,6 +431,27 @@ async function loadSelectedResults(runId) {
   const results = await api(`/api/runs/${encodeURIComponent(runId)}/results`);
   if (state.selectedResultRunId !== runId) return;
   renderResultsReport(results);
+}
+
+async function analyzeResultsWithAi(runId, button) {
+  button.disabled = true;
+  button.textContent = 'Analyzing with Ollama…';
+  const output = $('#ai-analysis-output');
+  output.hidden = false;
+  output.textContent = 'Waiting for the local model. The first request may take a few minutes while the model loads.';
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/ai-analysis`, { method: 'POST' });
+    if (state.selectedResultRunId !== runId) return;
+    output.innerHTML = `<h4>AI analysis · ${escapeHtml(result.model)}</h4><p>${escapeHtml(result.analysis).replace(/\n/g, '<br>')}</p>`;
+    if (result.baseline) {
+      output.insertAdjacentHTML('beforeend', `<p class="results-footnote">Compared with baseline ${escapeHtml(result.baseline.runId)}.</p>`);
+    }
+  } catch (error) {
+    if (state.selectedResultRunId === runId) output.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Explain with local AI';
+  }
 }
 
 async function loadResults() {
@@ -475,6 +503,10 @@ $('#execute-select').addEventListener('change', renderExecuteDetails);
 $('#runtime-select').addEventListener('change', (event) => loadRun(event.target.value).catch((error) => notify(error.message)));
 $('#results-select').addEventListener('change', (event) => loadSelectedResults(event.target.value).catch((error) => notify(error.message)));
 $('#refresh-results').addEventListener('click', () => loadResults().catch((error) => notify(error.message)));
+$('#results-report').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-ai-analyze]');
+  if (button) analyzeResultsWithAi(button.dataset.aiAnalyze, button);
+});
 $('#update-run').addEventListener('click', () => startRun($('#update-select').value).catch((error) => notify(error.message)));
 $('#execute-run').addEventListener('click', () => startRun($('#execute-select').value).catch((error) => notify(error.message)));
 $('#refresh-scenarios').addEventListener('click', () => loadScenarios().catch((error) => notify(error.message)));

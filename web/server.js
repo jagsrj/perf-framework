@@ -16,6 +16,7 @@ import {
   waitForJMeterContainer
 } from '../cli/docker.js';
 import { prepareJMX } from '../cli/jmx.js';
+import { analyzeWithOllama } from './ai-analysis.js';
 import { summarizeJtlStream } from './summary.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -192,6 +193,34 @@ function grafanaUrl(run) {
     kiosk: 'tv'
   });
   return `${dashboardBaseUrl.replace(/\/$/, '')}/d/jmeter-performance/jmeter-performance-test?${params.toString()}`;
+}
+
+async function findMatchingBaseline(run) {
+  const baselineResult = await pool.query(
+    `SELECT run_id, started_at, summary
+     FROM test_runs
+     WHERE scenario_id = $1
+       AND run_id <> $2
+       AND status = 'completed'
+       AND summary IS NOT NULL
+       AND started_at < $3
+       AND script_sha256 = $4
+       AND users = $5
+       AND duration_seconds = $6
+       AND rampup_seconds = $7
+     ORDER BY started_at DESC
+     LIMIT 1`,
+    [
+      run.scenario_id,
+      run.run_id,
+      run.started_at,
+      run.script_sha256,
+      run.users,
+      run.duration_seconds,
+      run.rampup_seconds
+    ]
+  );
+  return baselineResult.rows[0] || null;
 }
 
 async function monitorRunContainer(runId, containerId) {
@@ -516,33 +545,30 @@ app.get('/api/runs/:runId/results', asyncHandler(async (request, response) => {
   );
   if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
   const run = result.rows[0];
-  const baselineResult = await pool.query(
-    `SELECT run_id, started_at, summary
-     FROM test_runs
-     WHERE scenario_id = $1
-       AND run_id <> $2
-       AND status = 'completed'
-       AND summary IS NOT NULL
-       AND started_at < $3
-       AND script_sha256 = $4
-       AND users = $5
-       AND duration_seconds = $6
-       AND rampup_seconds = $7
-     ORDER BY started_at DESC
-     LIMIT 1`,
-    [
-      run.scenario_id,
-      run.run_id,
-      run.started_at,
-      run.script_sha256,
-      run.users,
-      run.duration_seconds,
-      run.rampup_seconds
-    ]
-  );
+  const baseline = await findMatchingBaseline(run);
   response.json({
     run,
-    baseline: baselineResult.rows[0] || null
+    baseline
+  });
+}));
+
+app.post('/api/runs/:runId/ai-analysis', asyncHandler(async (request, response) => {
+  const result = await pool.query(
+    `SELECT run_id, scenario_id, script_sha256, status, users, duration_seconds, rampup_seconds, started_at, summary
+     FROM test_runs WHERE run_id = $1`,
+    [request.params.runId]
+  );
+  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+  const run = result.rows[0];
+  if (run.status !== 'completed' || !run.summary) {
+    return response.status(409).json({ error: 'AI analysis is available only for completed runs with a summary.' });
+  }
+
+  const baseline = await findMatchingBaseline(run);
+  const analysis = await analyzeWithOllama(run.summary, baseline?.summary);
+  response.json({
+    ...analysis,
+    baseline: baseline ? { runId: baseline.run_id, startedAt: baseline.started_at } : null
   });
 }));
 

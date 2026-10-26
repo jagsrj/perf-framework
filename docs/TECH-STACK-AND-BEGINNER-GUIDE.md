@@ -36,13 +36,14 @@ Browser
 Node.js + Express web application (localhost:4000)
   ├── PostgreSQL (localhost:5433)
   ├── local files: data/scripts/ and results/<run-id>/
+  ├── Ollama (localhost:11434) for optional local AI explanations
   └── Docker CLI
         └── JMeter container
               └── InfluxDB (Docker network)
                     └── Grafana dashboard (localhost:3000)
 ```
 
-Docker Desktop runs the PostgreSQL, InfluxDB, and Grafana services. The Node.js application runs directly on the host. For each web run, the application asks Docker to start one JMeter container, mounts the prepared script and results directory, and then monitors the container.
+Docker Desktop runs the PostgreSQL, InfluxDB, Grafana, and Ollama services. The Node.js application runs directly on the host. For each web run, the application asks Docker to start one JMeter container, mounts the prepared script and results directory, and then monitors the container.
 
 Only one web-managed run may be active at a time. Remote worker registration and distributed execution are not implemented.
 
@@ -160,13 +161,19 @@ The app supplies runtime properties such as thread count, duration, ramp-up, Inf
 
 **Docker** runs an application in a container with an isolated filesystem and process environment. In this project:
 
-- Docker Compose starts PostgreSQL, InfluxDB, and Grafana.
+- Docker Compose starts PostgreSQL, InfluxDB, Grafana, and Ollama.
 - The web app starts a JMeter container for an individual run.
-- Docker volumes retain database and Grafana data when containers are recreated.
+- Docker volumes retain database, Grafana, and Ollama model data when containers are recreated.
 - A Docker bridge network lets the JMeter and Grafana containers reach InfluxDB by service name.
 - Bind mounts give JMeter access to the prepared JMX file and run output directory.
+- Each web-managed JMeter container is detached and labelled with its run ID. The server uses that label to find the container after an app restart, waits for its exit, and then summarizes the result.
+- **Abort test** stops the container with Docker's 10-second grace period before it is forcefully terminated.
 
 The Compose configuration is [`infra/docker-compose.yml`](../infra/docker-compose.yml). The JMeter container command and mounts are assembled in [`cli/docker.js`](../cli/docker.js).
+
+The web runner defaults to the image `perf-framework-jmeter:5.6.3` and network `infra_jmeter-network`. Set `JMETER_IMAGE` or `JMETER_DOCKER_NETWORK` in the web app's environment to use a differently named image or Docker network. The separate command-line runner continues to run JMeter in the foreground.
+
+Ollama exposes a local HTTP API on port `11434`. The Node app uses it to explain completed-run results, sending only overall numeric summary and baseline metrics—not JMX plans, raw JTL files, or transaction labels. Model responses are advisory and are not saved. Download a model once with `docker compose -f infra/docker-compose.yml exec ollama ollama pull llama3.2:3b`; the model files remain in the `ollama_data` volume. On macOS, container inference can be slower than native Ollama and compete with JMeter for CPU and memory.
 
 Useful commands:
 
@@ -238,9 +245,9 @@ docs/            Project documentation
 4. The server creates a run ID and a `results/<run-id>/` directory.
 5. It snapshots the selected source JMX into the run directory and records the script hash/version and load settings in PostgreSQL.
 6. `cli/jmx.js` prepares a JMX copy with the InfluxDB listener and run-ID tag.
-7. `cli/docker.js` builds a Docker argument array and starts a detached JMeter container. The script directory is mounted read-only; the result directory is mounted for JMeter output.
+7. `cli/docker.js` builds a Docker argument array and starts a detached JMeter container labelled with the run ID. The script directory is mounted read-only; the result directory is mounted for JMeter output.
 8. JMeter writes a JTL and log file and streams metrics to InfluxDB.
-9. The server waits for the container to exit. It streams the JTL through the summary code and stores the aggregate summary in PostgreSQL.
+9. The server waits for the container to exit. It streams the JTL through the summary code and stores the aggregate summary in PostgreSQL. Aborting a run asks Docker to stop the container gracefully, allowing up to 10 seconds before termination.
 10. The UI polls the run API. Grafana charts use the same run ID to filter metrics.
 
 The run lifecycle is:
@@ -251,7 +258,7 @@ starting → running → completed
                     ↘ aborted
 ```
 
-The server also searches Docker labels on application startup to reconnect to an active local JMeter container.
+The server also searches for the run-ID label on application startup to reconnect to an active local JMeter container. This supports monitoring recovery after a web-app restart; it is not distributed scheduling or high availability.
 
 ## 6. How the summary and baseline work
 

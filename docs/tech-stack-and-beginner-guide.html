@@ -294,13 +294,16 @@ scenarios 1 ── many test_runs</pre></div>
         <h3>Docker and Docker Compose</h3>
         <p><strong>Docker</strong> runs processes in containers with isolated filesystems and networking. Docker Compose describes a group of related services.</p>
         <ul>
-          <li>Compose starts PostgreSQL, InfluxDB, and Grafana.</li>
+          <li>Compose starts PostgreSQL, InfluxDB, Grafana, and Ollama.</li>
           <li>The app starts a JMeter container for a run.</li>
-          <li>Named volumes retain database/Grafana data when containers are recreated.</li>
+          <li>Named volumes retain database, Grafana, and Ollama model data when containers are recreated.</li>
           <li>A bridge network lets containers reach each other by service name.</li>
           <li>Bind mounts expose the prepared JMX and output folder to JMeter.</li>
+          <li>Each web-run container is detached and labelled with its run ID. The server can find it after an app restart, wait for it to exit, and then summarize its results.</li>
+          <li><strong>Abort test</strong> asks Docker to stop the container gracefully, allowing 10 seconds before forceful termination.</li>
         </ul>
-        <p>See <a href="../infra/docker-compose.yml"><code>infra/docker-compose.yml</code></a> and <a href="../cli/docker.js"><code>cli/docker.js</code></a>. <code>docker compose down</code> retains named volumes by default; adding <code>-v</code> deletes those volumes and their data.</p>
+        <p>See <a href="../infra/docker-compose.yml"><code>infra/docker-compose.yml</code></a> and <a href="../cli/docker.js"><code>cli/docker.js</code></a>. The web runner defaults to image <code>perf-framework-jmeter:5.6.3</code> and network <code>infra_jmeter-network</code>; set <code>JMETER_IMAGE</code> or <code>JMETER_DOCKER_NETWORK</code> in the web app environment to override them. The standalone CLI runner runs JMeter in the foreground. <code>docker compose down</code> retains named volumes by default; adding <code>-v</code> deletes those volumes and their data.</p>
+        <p>Ollama exposes a local API on port <code>11434</code> for optional AI explanations of completed results. The app sends only numeric summary and baseline metrics, not JMX plans or raw JTL files; explanations are advisory and are not saved. Download a model with <code>docker compose -f infra/docker-compose.yml exec ollama ollama pull llama3.2:3b</code>. Container inference on macOS may be slower than native Ollama and compete with JMeter for CPU and memory.</p>
 
         <h3>InfluxDB and Grafana</h3>
         <p><strong>InfluxDB</strong> stores time-series measurements: values associated with timestamps and filterable tags. JMeter's Backend Listener writes metrics to the <code>jmeter</code> database; this project configures one-day retention.</p>
@@ -363,9 +366,9 @@ docs/            Documentation</pre></div>
           <li>The server creates a run ID and <code>results/&lt;run-id&gt;/</code>; it snapshots the source JMX.</li>
           <li>PostgreSQL records the script hash/version and the exact run settings.</li>
           <li><code>cli/jmx.js</code> prepares a JMX copy with the metrics listener/run tag.</li>
-          <li><code>cli/docker.js</code> starts a detached JMeter container and mounts the script read-only and the results directory for output.</li>
+          <li><code>cli/docker.js</code> starts a detached JMeter container labelled by run ID and mounts the script read-only and the results directory for output.</li>
           <li>JMeter writes the JTL/log files and streams live measurements to InfluxDB.</li>
-          <li>The server waits for JMeter to exit, summarizes the JTL, and stores the aggregate summary in PostgreSQL.</li>
+          <li>The server waits for JMeter to exit, summarizes the JTL, and stores the aggregate summary in PostgreSQL. Abort requests allow up to 10 seconds for graceful shutdown.</li>
           <li>The UI polls run status; Grafana uses the run ID to filter charts.</li>
         </ol>
         <h3>Run states</h3>
@@ -374,7 +377,7 @@ docs/            Documentation</pre></div>
           <span class="status active">Running</span><span class="status-arrow">→</span>
           <span class="status good">Completed</span><span class="status bad">Failed</span><span class="status">Aborted</span>
         </div>
-        <p>The database constraint currently allows one active run. On server restart, Docker labels help the app find and resume monitoring its active JMeter container.</p>
+        <p>The database constraint currently allows one active run. On server restart, the run-ID label helps the app find and resume monitoring its active JMeter container. This improves local recovery but is not distributed scheduling or high availability.</p>
       </section>
 
       <section class="panel" id="results">

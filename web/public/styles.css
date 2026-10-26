@@ -139,6 +139,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .results-table .improved { color: var(--good); }
 .results-table .regressed { color: var(--bad); }
 .results-footnote { margin: 15px 0 0; color: var(--muted); font-size: 12px; }
+.ai-analysis-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.ai-analysis-output { margin-top: 16px; padding: 16px; color: #35475a; background: #f3f7fa; border: 1px solid var(--border); border-radius: 6px; white-space: normal; }
+.ai-analysis-output h4 { margin: 0 0 8px; color: var(--text); }
+.ai-analysis-output p { margin-bottom: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 14px 0 26px; }
 .metric-card { padding: 15px; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; box-shadow: var(--shadow); }
 .metric-card span { display: block; color: var(--muted); font-size: 12px; }
