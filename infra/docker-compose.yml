@@ -1,0 +1,70 @@
+services:
+  influxdb:
+    image: influxdb:1.8
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+    networks:
+      - jmeter-network
+    environment:
+      INFLUXDB_DB: jmeter
+    healthcheck:
+      test: ["CMD", "influx", "-execute", "SHOW DATABASES"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    volumes:
+      - grafana_data_v2:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - jmeter-network
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: perf_framework
+      POSTGRES_USER: perf_framework
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U perf_framework -d perf_framework"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  influxdb-retention:
+    image: influxdb:1.8
+    networks:
+      - jmeter-network
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        influx -host influxdb -execute
+        'ALTER RETENTION POLICY "autogen" ON "jmeter" DURATION 1d SHARD DURATION 1h DEFAULT'
+    restart: "no"
+
+networks:
+  jmeter-network:
+    driver: bridge
+
+volumes:
+  influxdb_data:
+  grafana_data_v2:
+  postgres_data:

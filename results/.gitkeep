@@ -1,0 +1,18 @@
+# Perf Framework
+
+A single-node JMeter runner that writes metrics to InfluxDB and visualizes them with Grafana.
+
+## Prerequisites
+
+- Docker Desktop or Docker Engine
+- Docker Compose
+- Node.js 18+
+- Git
+
+## Start the stack
+
+From the project root:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```

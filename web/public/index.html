@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Performance Test Console</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">PERF FRAMEWORK</p>
+      <h1>Performance Test Console</h1>
+    </div>
+    <a class="external-link" href="http://localhost:3000" target="_blank" rel="noreferrer">Open Grafana ↗</a>
+  </header>
+
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="tab active" data-view="create">Create scenario</button>
+    <button class="tab" data-view="update">Update scenario</button>
+    <button class="tab" data-view="execute">Execute scenario</button>
+    <button class="tab" data-view="runtime">Runtime monitoring</button>
+  </nav>
+
+  <main>
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <section class="view" id="view-create">
+      <div class="section-heading">
+        <div><p class="eyebrow">TEST DEFINITION</p><h2>Create a scenario</h2></div>
+        <p>Define the load shape and optionally select a JMeter plan to upload with the scenario.</p>
+      </div>
+      <form id="create-form" class="form-card">
+        <label>Scenario name<input name="name" required maxlength="120" placeholder="Checkout smoke test"></label>
+        <div class="script-name-field">
+          <label for="create-script-name">Script name</label>
+          <div class="input-action">
+            <input id="create-script-name" name="scriptName" required maxlength="255" placeholder="checkout.jmx">
+            <button class="secondary" id="locate-script" type="button">Locate script</button>
+          </div>
+          <input id="create-script-file" type="file" accept=".jmx,application/xml,text/xml" hidden>
+          <p class="help">Select a .jmx file to fill in the script name and upload it when you create the scenario. Maximum size: 10 MB.</p>
+        </div>
+        <div class="form-grid">
+          <label>Virtual users<input name="users" type="number" required min="1" max="100000" value="10"></label>
+          <label>Duration (seconds)<input name="duration" type="number" required min="1" max="86400" value="60"></label>
+          <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0" value="10"></label>
+        </div>
+        <button class="primary" type="submit">Create scenario</button>
+      </form>
+      <div class="section-heading compact"><h3>Scenarios</h3><button class="quiet" id="refresh-scenarios">Refresh</button></div>
+      <div id="scenario-list" class="card-list"></div>
+    </section>
+
+    <section class="view" id="view-update" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">SCENARIO LIBRARY</p><h2>Update scenario and script</h2></div>
+        <p>Update load settings, upload a JMeter plan, inspect its stored content, and launch a run.</p>
+      </div>
+      <div class="form-card">
+        <label>Select scenario<select id="update-select"></select></label>
+        <form id="update-form">
+          <label>Scenario name<input name="name" required maxlength="120"></label>
+          <label>Script name<input name="scriptName" required maxlength="255"></label>
+          <div class="form-grid">
+            <label>Virtual users<input name="users" type="number" required min="1" max="100000"></label>
+            <label>Duration (seconds)<input name="duration" type="number" required min="1" max="86400"></label>
+            <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0"></label>
+          </div>
+          <button class="primary" type="submit">Save scenario</button>
+        </form>
+        <div class="divider"></div>
+        <form id="upload-form">
+          <label>Upload JMeter script (.jmx)<input id="script-file" name="script" type="file" accept=".jmx,application/xml,text/xml" required></label>
+          <p class="help">Maximum file size: 10 MB. The file is parsed as JMeter XML before it is accepted.</p>
+          <button class="secondary" type="submit">Upload / replace script</button>
+        </form>
+        <div class="script-heading"><strong id="script-title">Stored script</strong><span id="script-status" class="muted"></span></div>
+        <pre id="script-preview" class="code-preview">Choose a scenario to view its uploaded JMX script.</pre>
+        <button class="primary" id="update-run" type="button">Execute this scenario</button>
+      </div>
+    </section>
+
+    <section class="view" id="view-execute" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">LOAD TEST</p><h2>Execute a scenario</h2></div>
+        <p>Start one local JMeter run at a time. The scenario’s user count, duration, and ramp-up are used as configured.</p>
+      </div>
+      <div class="form-card">
+        <label>Select scenario<select id="execute-select"></select></label>
+        <div id="execute-details" class="detail-box">Select a scenario to review its configuration.</div>
+        <button class="primary" id="execute-run" type="button">Start test run</button>
+      </div>
+      <div class="section-heading compact"><h3>Recent runs</h3><button class="quiet" id="refresh-runs">Refresh</button></div>
+      <div id="run-list" class="card-list"></div>
+    </section>
+
+    <section class="view" id="view-runtime" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">LIVE OBSERVABILITY</p><h2>Runtime monitoring</h2></div>
+        <p>Monitor the active run, abort it if needed, and analyze its completed summary. Live charts come from Grafana and InfluxDB.</p>
+      </div>
+      <div class="form-card monitor-controls">
+        <label>Select run<select id="runtime-select"></select></label>
+        <button class="quiet" id="refresh-runtime" type="button">Refresh run status</button>
+      </div>
+      <div id="runtime-details" class="detail-box">Start a run or select a previous run to view its status.</div>
+      <div id="summary-cards" class="summary-grid" hidden></div>
+      <div class="dashboard-heading">
+        <div><h3>Live Grafana dashboard</h3><p>Filtered to the selected scenario and run ID. Refreshes every 5 seconds.</p></div>
+        <a id="open-run-dashboard" class="secondary-link" href="http://localhost:3000" target="_blank" rel="noreferrer">Open full dashboard ↗</a>
+      </div>
+      <div id="dashboard-frame" class="dashboard-frame empty">Select a run to load its dashboard.</div>
+    </section>
+  </main>
+
+  <footer>
+    Local development console · UI listens on 127.0.0.1 · Grafana embeds with temporary read-only local access
+  </footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>

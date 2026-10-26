@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perf Framework JavaScript Guide</title>
+  <style>
+    body {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #222;
+      font: 16px/1.65 system-ui, sans-serif;
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    code, pre {
+      background: #f2f4f7;
+      border-radius: 4px;
+      font-family: ui-monospace, monospace;
+    }
+    code { padding: 2px 5px; }
+    pre { padding: 16px; overflow-x: auto; }
+    .note {
+      border-left: 4px solid #2574a9;
+      background: #eef7fc;
+      padding: 12px 16px;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Perf Framework: JavaScript Files Explained</h1>
+
+  <p>
+    This guide explains how the Node.js files work together to run a JMeter
+    test. The basic flow is:
+  </p>
+
+  <pre>Terminal command → index.js → run-id.js / jmx.js → docker.js → JMeter container</pre>
+
+  <div class="note">
+    <strong>Source note:</strong> The exact contents of <code>jmx.js</code> and
+    <code>run-id.js</code> were not provided here. Their sections explain their
+    reported roles and known function signature. Check those files to confirm
+    details such as how XML is edited and how IDs are formatted.
+  </div>
+
+  <h2>1. <code>cli/index.js</code>: coordinates a test run</h2>
+
+  <p>
+    This is the command-line entry point. It reads the user’s options, prepares
+    the run directory and test file, then calls the Docker runner.
+  </p>
+
+  <h3>Imports</h3>
+  <ul>
+    <li>
+      <code>Command</code> from <code>commander</code> defines and reads
+      terminal commands and options.
+    </li>
+    <li>
+      <code>generateRunId</code> imports the function that creates a unique
+      identifier for a run.
+    </li>
+    <li>
+      <code>prepareJMX as prepareJmx</code> imports a function from
+      <code>jmx.js</code> and uses the local name <code>prepareJmx</code>.
+      The <code>as</code> keyword renames the imported function in this file.
+    </li>
+    <li>
+      <code>path</code> provides helpers for building file paths.
+    </li>
+    <li>
+      <code>runJMeterInDocker</code> imports the function that starts JMeter
+      through Docker.
+    </li>
+    <li>
+      <code>mkdir</code> creates the results directory. It is asynchronous,
+      so the code uses <code>await</code>.
+    </li>
+  </ul>
+
+  <h3>Registering the command</h3>
+  <pre><code>const program = new Command();</code></pre>
+  <p>
+    Creates a Commander program. The code then registers a command named
+    <code>run</code>, which is why the terminal command includes
+    <code>node cli/index.js run</code>.
+  </p>
+
+  <pre><code>.requiredOption('--script &lt;path.jmx&gt;', 'Path to the JMX script')
+.requiredOption('--name &lt;testName&gt;', 'Name of the test')</code></pre>
+  <p>
+    These options are mandatory. A test needs a JMX file and a name.
+  </p>
+
+  <pre><code>.option('--threads &lt;number&gt;', 'Number of threads', '10')
+.option('--duration &lt;seconds&gt;', 'Duration of the test', '60')
+.option('--rampup &lt;seconds&gt;', 'Ramp-up time', '10')</code></pre>
+  <p>
+    These options are optional. If omitted, Commander uses the provided
+    defaults. Commander normally gives option values to the program as strings,
+    such as <code>"10"</code>, even when the value represents a number.
+  </p>
+
+  <h3>The action function</h3>
+  <pre><code>.action(async (options) =&gt; { ... })</code></pre>
+  <p>
+    Commander calls this function after it recognizes the <code>run</code>
+    command. The <code>options</code> object contains the values entered by the
+    user and any defaults.
+  </p>
+
+  <ol>
+    <li>
+      <code>generateRunId()</code> creates an identifier to distinguish this
+      test run from other runs.
+    </li>
+    <li>
+      <code>const { script, name, threads, duration, rampup } = options;</code>
+      uses JavaScript destructuring to copy those properties into separate
+      variables.
+    </li>
+    <li>
+      <code>path.resolve('results', runId)</code> creates an absolute path for
+      this run’s results folder.
+    </li>
+    <li>
+      <code>await mkdir(resultsDir, { recursive: true })</code> creates that
+      folder. <code>recursive: true</code> also creates missing parent folders.
+    </li>
+    <li>
+      <code>path.resolve(script)</code> converts the supplied script path to an
+      absolute path based on the current working directory.
+    </li>
+    <li>
+      <code>prepareJmx(...)</code> prepares a working JMX file in the run’s
+      results folder. It should work on a copy so the original test plan stays
+      unchanged.
+    </li>
+    <li>
+      <code>runJMeterInDocker(...)</code> receives the prepared JMX path,
+      InfluxDB URL, test name, run ID, and load settings.
+    </li>
+    <li>
+      The <code>catch</code> block handles errors thrown by those operations.
+      <code>console.error</code> prints the problem and
+      <code>process.exit(1)</code> marks the command as failed.
+    </li>
+  </ol>
+
+  <h3>Reading the command line</h3>
+  <pre><code>program.parse(process.argv);</code></pre>
+  <p>
+    <code>process.argv</code> contains the words typed in the terminal.
+    Commander reads those words, matches them to the registered options, and
+    starts the action function.
+  </p>
+
+  <h2>2. <code>cli/run-id.js</code>: names a run</h2>
+
+  <p>
+    This module exports <code>generateRunId()</code>. The CLI calls it once at
+    the beginning of a run. The ID is used to keep each run’s output separate
+    and to identify its metrics.
+  </p>
+
+  <p>
+    The precise format depends on the implementation in your file. In general,
+    a run ID often combines the current time with a short random value to make
+    collisions unlikely. The function should return a string.
+  </p>
+
+  <h2>3. <code>cli/jmx.js</code>: prepares the test plan</h2>
+
+  <p>
+    The function reported in your file is:
+  </p>
+
+  <pre><code>prepareJMX(originalJMXPath, runId, testName, resultsDir)</code></pre>
+
+  <p>
+    Its job is to prepare the JMX file for one run. Based on the function
+    signature and intended workflow, it receives:
+  </p>
+
+  <ul>
+    <li><code>originalJMXPath</code>: where the user's original JMX lives.</li>
+    <li><code>runId</code>: this run’s unique ID.</li>
+    <li><code>testName</code>: the name used to identify the test.</li>
+    <li><code>resultsDir</code>: where the run’s working copy and output belong.</li>
+  </ul>
+
+  <p>
+    The intended result is a working JMX copy, possibly with runtime settings
+    or an InfluxDB Backend Listener prepared for the run. The function’s return
+    value should be the path to that prepared JMX file, because
+    <code>index.js</code> passes it to <code>docker.js</code>.
+  </p>
+
+  <div class="note">
+    <strong>Important:</strong> JMeter JMX files have a strict XML structure.
+    Test elements such as samplers, timers, and controllers must be paired with
+    their corresponding <code>&lt;hashTree&gt;</code> elements. If the
+    preparation code parses and rebuilds XML, it must preserve that order and
+    nesting. A malformed prepared copy can make JMeter fail even when the
+    original file looks correct.
+  </div>
+
+  <h2>4. <code>cli/docker.js</code>: starts JMeter in Docker</h2>
+
+  <p>
+    The shared implementation exports this function:
+  </p>
+
+  <pre><code>runJMeterInDocker(
+  runId, jmxPath, influxdbUrl, testName, threads, duration, rampup
+)</code></pre>
+
+  <h3>Imports and function setup</h3>
+  <ul>
+    <li>
+      <code>spawn</code> from <code>node:child_process</code> starts an external
+      program—in this case, the Docker CLI.
+    </li>
+    <li>
+      <code>path</code> helps find the directory and filename of the prepared
+      JMX file.
+    </li>
+    <li>
+      <code>path.dirname(jmxPath)</code> gets the folder containing the JMX.
+    </li>
+    <li>
+      <code>path.basename(jmxPath)</code> gets just the JMX filename.
+    </li>
+  </ul>
+
+  <h3>Building the Docker command</h3>
+  <p>
+    The <code>args</code> array contains the Docker command and its arguments.
+    Using an array with <code>spawn</code> keeps each argument separate.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Argument</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>run</code></td>
+        <td>Starts a new Docker container.</td>
+      </tr>
+      <tr>
+        <td><code>--rm</code></td>
+        <td>Deletes the container after it exits. Files in the mounted results folder remain.</td>
+      </tr>
+      <tr>
+        <td><code>--network=infra_jmeter-network</code></td>
+        <td>Connects the container to the Docker network where InfluxDB is reachable.</td>
+      </tr>
+      <tr>
+        <td><code>-v resultsDir:/results</code></td>
+        <td>Makes the run folder available inside the container at <code>/results</code>.</td>
+      </tr>
+      <tr>
+        <td><code>perf-framework-jmeter:5.6.3</code></td>
+        <td>Selects the JMeter image to run.</td>
+      </tr>
+      <tr>
+        <td><code>-n</code></td>
+        <td>Runs JMeter in non-GUI mode.</td>
+      </tr>
+      <tr>
+        <td><code>-t</code></td>
+        <td>Tells JMeter which test plan to execute.</td>
+      </tr>
+      <tr>
+        <td><code>-l</code> and <code>-j</code></td>
+        <td>Set the JTL results file and JMeter log file.</td>
+      </tr>
+      <tr>
+        <td><code>-Jname=value</code></td>
+        <td>Passes a property into JMeter, such as thread count or run ID.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Starting Docker and handling its result</h3>
+  <pre><code>spawn('docker', args, { stdio: 'inherit' })</code></pre>
+  <p>
+    Starts Docker with the arguments in the array. <code>stdio: 'inherit'</code>
+    sends Docker and JMeter output directly to the terminal.
+  </p>
+
+  <pre><code>child.on('error', reject);</code></pre>
+  <p>
+    If Node.js cannot start the Docker process at all—for example, if Docker is
+    missing—this rejects the returned Promise.
+  </p>
+
+  <pre><code>child.on('close', (code) =&gt; { ... });</code></pre>
+  <p>
+    Runs when the Docker process exits. A code of <code>0</code> usually means
+    success. A nonzero code indicates failure.
+  </p>
+
+  <div class="note">
+    <strong>Current behavior to be aware of:</strong> the shared
+    <code>docker.js</code> resolves the Promise for both success and failure.
+    On failure it resolves with a nonzero code rather than rejecting. If
+    <code>index.js</code> does not check that returned code, it can print
+    “Test run completed” even when JMeter failed. The exit code should be
+    checked and propagated so a failed run is reported accurately.
+  </div>
+
+  <h2>Putting the pieces together</h2>
+
+  <ol>
+    <li>You enter <code>node cli/index.js run ...</code> in the terminal.</li>
+    <li>Commander reads the options in <code>index.js</code>.</li>
+    <li><code>run-id.js</code> creates a unique ID.</li>
+    <li><code>index.js</code> creates a results folder.</li>
+    <li><code>jmx.js</code> prepares a working test plan.</li>
+    <li><code>docker.js</code> starts a JMeter container with that test plan.</li>
+    <li>JMeter saves its log and JTL file into the mounted results folder.</li>
+  </ol>
+
+  <h2>Useful JavaScript concepts used here</h2>
+
+  <ul>
+    <li><strong>Import:</strong> makes code from another file or package available.</li>
+    <li><strong>Export:</strong> lets another file import a function.</li>
+    <li><strong>Function arguments:</strong> values passed into a function.</li>
+    <li><strong>Destructuring:</strong> pulls named values out of an object.</li>
+    <li><strong>Promise:</strong> represents work that finishes later.</li>
+    <li><strong><code>async</code> / <code>await</code>:</strong> make asynchronous code easier to read.</li>
+    <li><strong>Event:</strong> a notification such as a child process closing.</li>
+    <li><strong>Exit code:</strong> a number used by a command to report success or failure.</li>
+  </ul>
+</body>
+</html>
