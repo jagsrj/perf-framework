@@ -507,6 +507,45 @@ app.get('/api/runs/:runId', asyncHandler(async (request, response) => {
   response.json({ ...result.rows[0], grafanaUrl: grafanaUrl(result.rows[0]) });
 }));
 
+app.get('/api/runs/:runId/results', asyncHandler(async (request, response) => {
+  const result = await pool.query(
+    `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
+            users, duration_seconds, rampup_seconds, started_at, ended_at, summary
+     FROM test_runs WHERE run_id = $1`,
+    [request.params.runId]
+  );
+  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+  const run = result.rows[0];
+  const baselineResult = await pool.query(
+    `SELECT run_id, started_at, summary
+     FROM test_runs
+     WHERE scenario_id = $1
+       AND run_id <> $2
+       AND status = 'completed'
+       AND summary IS NOT NULL
+       AND started_at < $3
+       AND script_sha256 = $4
+       AND users = $5
+       AND duration_seconds = $6
+       AND rampup_seconds = $7
+     ORDER BY started_at DESC
+     LIMIT 1`,
+    [
+      run.scenario_id,
+      run.run_id,
+      run.started_at,
+      run.script_sha256,
+      run.users,
+      run.duration_seconds,
+      run.rampup_seconds
+    ]
+  );
+  response.json({
+    run,
+    baseline: baselineResult.rows[0] || null
+  });
+}));
+
 app.get('*', (request, response) => {
   response.sendFile(path.join(publicDir, 'index.html'));
 });

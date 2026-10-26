@@ -20,6 +20,7 @@
     <button class="tab" data-view="update">Update scenario</button>
     <button class="tab" data-view="execute">Execute scenario</button>
     <button class="tab" data-view="runtime">Runtime monitoring</button>
+    <button class="tab" data-view="results">Test results</button>
   </nav>
 
   <main>
@@ -112,11 +113,25 @@
       </div>
       <div id="dashboard-frame" class="dashboard-frame empty">Select a run to load its dashboard.</div>
     </section>
+
+    <section class="view" id="view-results" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">RUN HISTORY</p><h2>Test results</h2></div>
+        <p>Select a completed run to view its report and compare it with the latest earlier run using the same scenario, script, and load settings.</p>
+      </div>
+      <div class="form-card monitor-controls">
+        <label for="results-select">Select test run<select id="results-select"></select></label>
+        <button class="quiet" id="refresh-results" type="button">Refresh runs</button>
+      </div>
+      <article id="results-report" class="results-report empty" aria-live="polite">
+        Select a run to view its results.
+      </article>
+    </section>
   </main>
 
   <footer>
     Local development console · UI listens on 127.0.0.1 · Grafana embeds with temporary read-only local access
   </footer>
-  <script src="/app.js" defer></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

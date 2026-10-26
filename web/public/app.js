@@ -1,7 +1,10 @@
+import { compareSummaries } from '/results.js';
+
 const state = {
   scenarios: [],
   runs: [],
   currentRunId: null,
+  selectedResultRunId: null,
   analyzedRunId: null,
   pollTimer: null,
   remainingTimer: null
@@ -33,6 +36,7 @@ function showView(name, preferredRunId = null) {
   document.querySelectorAll('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
   if (name === 'runtime') showCurrentRun(preferredRunId).catch((error) => notify(error.message));
   if (name === 'execute') loadRuns();
+  if (name === 'results') loadResults().catch((error) => notify(error.message));
 }
 
 function scenarioOptions(select, selectedId = '') {
@@ -214,6 +218,13 @@ function renderRuns() {
     `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${escapeHtml(run.run_id)} · ${escapeHtml(run.status)}</option>`
   ).join('');
   if (state.runs.some((run) => run.run_id === current)) selector.value = current;
+  const resultsSelector = $('#results-select');
+  resultsSelector.innerHTML = '<option value="">Choose a run</option>' + state.runs.map((run) =>
+    `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${new Date(run.started_at).toLocaleString()} · ${escapeHtml(run.status)}</option>`
+  ).join('');
+  if (state.runs.some((run) => run.run_id === state.selectedResultRunId)) {
+    resultsSelector.value = state.selectedResultRunId;
+  }
 }
 
 async function loadRuns() {
@@ -335,6 +346,96 @@ async function loadRun(runId) {
   }
 }
 
+function resultValue(value, suffix = '') {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  const formatted = Number.isInteger(Number(value)) ? String(value) : Number(value).toFixed(2);
+  return `${formatted}${suffix}`;
+}
+
+function renderResultsReport({ run, baseline }) {
+  const report = $('#results-report');
+  report.classList.remove('empty');
+  const startedAt = new Date(run.started_at).toLocaleString();
+  const endedAt = run.ended_at ? new Date(run.ended_at).toLocaleString() : 'In progress';
+  const baselineSummary = baseline?.summary || null;
+
+  if (!run.summary) {
+    report.innerHTML = `
+      <header class="results-header">
+        <div><p class="eyebrow">TEST REPORT</p><h3>${escapeHtml(run.scenario_name)}</h3></div>
+        <span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+      </header>
+      <p class="muted">${['starting', 'running'].includes(run.status)
+        ? 'The test is still running. A report will be available when its summary has been generated.'
+        : 'No summary is available for this run.'}</p>`;
+    return;
+  }
+
+  const metrics = compareSummaries(run.summary, baselineSummary);
+  const baselineDescription = baseline
+    ? `Baseline run ${escapeHtml(baseline.run_id)} · ${new Date(baseline.started_at).toLocaleString()}`
+    : 'No earlier completed run matches this scenario, script, and load configuration.';
+  report.innerHTML = `
+    <header class="results-header">
+      <div><p class="eyebrow">TEST REPORT</p><h3>${escapeHtml(run.scenario_name)}</h3></div>
+      <span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+    </header>
+    <div class="results-meta">
+      <span><strong>Run ID</strong>${escapeHtml(run.run_id)}</span>
+      <span><strong>Script</strong>${escapeHtml(run.script_name || 'unknown')} · v${escapeHtml(run.script_version ?? 'unknown')}</span>
+      <span><strong>Started</strong>${escapeHtml(startedAt)}</span>
+      <span><strong>Ended</strong>${escapeHtml(endedAt)}</span>
+      <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
+    </div>
+    <div class="baseline-note">${baselineDescription}</div>
+    <div class="results-table-wrap">
+      <table class="results-table">
+        <thead><tr><th scope="col">Metric</th><th scope="col">Selected run</th><th scope="col">Baseline</th><th scope="col">Change</th></tr></thead>
+        <tbody>${metrics.map((metric) => {
+          const suffix = metric.suffix;
+          const deltaText = metric.delta === null
+            ? '—'
+            : `${metric.delta > 0 ? '+' : ''}${resultValue(metric.delta, suffix)}${metric.percentChange === null ? '' : ` (${metric.percentChange > 0 ? '+' : ''}${metric.percentChange.toFixed(1)}%)`}`;
+          const changeClass = metric.lowerIsBetter === null || metric.delta === null || metric.delta === 0
+            ? ''
+            : (metric.delta < 0 ? 'improved' : 'regressed');
+          return `<tr>
+            <th scope="row">${escapeHtml(metric.label)}</th>
+            <td>${resultValue(metric.value, suffix)}</td>
+            <td>${resultValue(metric.baselineValue, suffix)}</td>
+            <td class="${changeClass}">${deltaText}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>`;
+}
+
+async function loadSelectedResults(runId) {
+  const report = $('#results-report');
+  if (!runId) {
+    report.classList.add('empty');
+    report.textContent = 'Select a run to view its results.';
+    return;
+  }
+  state.selectedResultRunId = runId;
+  report.classList.add('empty');
+  report.textContent = 'Loading test report…';
+  const results = await api(`/api/runs/${encodeURIComponent(runId)}/results`);
+  if (state.selectedResultRunId !== runId) return;
+  renderResultsReport(results);
+}
+
+async function loadResults() {
+  await loadRuns();
+  const selector = $('#results-select');
+  if (!state.runs.some((run) => run.run_id === state.selectedResultRunId)) {
+    state.selectedResultRunId = state.runs[0]?.run_id || null;
+  }
+  selector.value = state.selectedResultRunId || '';
+  await loadSelectedResults(state.selectedResultRunId);
+}
+
 async function abortRun(runId) {
   if (!window.confirm('Abort this test run?')) return;
   await api(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: 'POST' });
@@ -372,6 +473,8 @@ $('#upload-form').addEventListener('submit', (event) => uploadScenarioScript(eve
 $('#update-select').addEventListener('change', (event) => selectUpdateScenario(event.target.value));
 $('#execute-select').addEventListener('change', renderExecuteDetails);
 $('#runtime-select').addEventListener('change', (event) => loadRun(event.target.value).catch((error) => notify(error.message)));
+$('#results-select').addEventListener('change', (event) => loadSelectedResults(event.target.value).catch((error) => notify(error.message)));
+$('#refresh-results').addEventListener('click', () => loadResults().catch((error) => notify(error.message)));
 $('#update-run').addEventListener('click', () => startRun($('#update-select').value).catch((error) => notify(error.message)));
 $('#execute-run').addEventListener('click', () => startRun($('#execute-select').value).catch((error) => notify(error.message)));
 $('#refresh-scenarios').addEventListener('click', () => loadScenarios().catch((error) => notify(error.message)));

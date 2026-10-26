@@ -47,6 +47,7 @@ Open **http://localhost:4000**. The app binds to `127.0.0.1` and is intended for
 2. **Update scenario:** select the new scenario, upload a `.jmx` file, review its stored XML, and save any updated settings.
 3. **Execute scenario:** select a script-ready scenario and start a test. Only one run can be active at once.
 4. **Runtime monitoring:** the view automatically selects the most recent active run, or the most recent run if none is active, and embeds its Grafana dashboard filtered by scenario and run ID. Active runs show their start time and estimated time remaining; **Abort test** stops a run early. When a summary is available, **Analyze summary** displays the summary already stored in PostgreSQL.
+5. **Test results:** select a run to view its saved summary and compare it with the latest earlier completed run using the same scenario, script contents, and load configuration. A baseline is only shown when a matching earlier run has a summary.
 
 The upload endpoint accepts JMX files up to 10 MB and validates that they parse as JMeter XML. Treat uploaded test plans as executable code: run only scripts you trust.
 
