@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A beginner-friendly, visual guide to the Performance Testing Framework stack, architecture, and codebase.">
+  <title>Perf Framework | Tech Stack & Beginner Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #203246;
+      --muted: #61758a;
+      --blue: #0866a8;
+      --blue-dark: #064d80;
+      --blue-pale: #eaf4fb;
+      --green: #147d55;
+      --amber: #8b5a00;
+      --red: #a8323e;
+      --border: #dce5ed;
+      --paper: #fff;
+      --canvas: #f3f6f9;
+      --shadow: 0 8px 28px rgb(29 54 76 / 7%);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 15px/1.7 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); }
+    a:hover { color: var(--blue-dark); }
+    .hero {
+      padding: 54px max(28px, calc((100vw - 1240px) / 2)) 48px;
+      color: white;
+      background: linear-gradient(120deg, #163b5b, #0866a8 72%, #2d859d);
+    }
+    .hero-inner { max-width: 1240px; margin: auto; }
+    .eyebrow { margin: 0 0 9px; color: #a9d6ed; font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 0; font-size: clamp(34px, 5vw, 54px); line-height: 1.08; letter-spacing: -.04em; }
+    .hero-copy { max-width: 760px; margin: 18px 0 0; color: #e2eff7; font-size: 18px; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 25px; }
+    .pill { padding: 6px 11px; border: 1px solid rgb(255 255 255 / 30%); border-radius: 999px; color: white; font-size: 12px; font-weight: 700; }
+    .layout { display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 28px; max-width: 1296px; margin: 28px auto 64px; padding: 0 24px; align-items: start; }
+    .toc {
+      position: sticky;
+      top: 20px;
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 18px 14px;
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+    .toc-title { margin: 0 0 10px 8px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .toc a { display: block; margin: 2px 0; padding: 7px 9px; border-radius: 6px; color: #40566b; font-size: 12px; line-height: 1.35; text-decoration: none; }
+    .toc a:hover, .toc a:focus { color: var(--blue-dark); background: var(--blue-pale); }
+    main { min-width: 0; }
+    .intro-card, section.panel {
+      margin-bottom: 18px;
+      padding: clamp(20px, 3vw, 34px);
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+    section.panel { scroll-margin-top: 18px; }
+    h2 { margin: 0 0 14px; font-size: 25px; line-height: 1.25; letter-spacing: -.025em; }
+    h3 { margin: 27px 0 8px; font-size: 18px; line-height: 1.35; }
+    h4 { margin: 19px 0 6px; font-size: 15px; }
+    p { margin: 10px 0; }
+    .lead { color: var(--muted); font-size: 16px; }
+    .callout { margin: 18px 0; padding: 14px 17px; border-left: 4px solid var(--blue); border-radius: 0 7px 7px 0; background: var(--blue-pale); }
+    .callout.warning { border-color: #d19a2c; background: #fff8e9; }
+    .callout.success { border-color: var(--green); background: #eaf7f0; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: #fcfdfe; }
+    .card h3, .card h4 { margin: 0 0 7px; }
+    .card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .stack-diagram { margin: 18px 0; padding: 18px; overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; background: #f8fbfd; }
+    .stack-diagram pre { min-width: 570px; margin: 0; color: #244563; font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    table { width: 100%; margin: 16px 0; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { color: #344c62; background: #f1f6f9; font-weight: 750; }
+    tbody tr:nth-child(even) { background: #fafcfd; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    :not(pre) > code { padding: 2px 5px; border: 1px solid #e4eaf0; border-radius: 4px; background: #f3f6f8; color: #244563; font-size: .92em; }
+    pre {
+      margin: 13px 0;
+      padding: 16px;
+      overflow-x: auto;
+      border: 1px solid #dce5ed;
+      border-radius: 8px;
+      background: #172b3e;
+      color: #e7f1f8;
+      font-size: 12px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+    pre code { color: inherit; }
+    .flow { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 22px; margin: 20px 0; }
+    .flow-item { position: relative; padding: 13px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fbfdff; text-align: center; font-size: 12px; font-weight: 750; }
+    .flow-item:not(:last-child)::after { position: absolute; top: 50%; right: -21px; color: var(--blue); content: "→"; font-size: 18px; transform: translateY(-50%); }
+    .flow-item small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; font-weight: 500; }
+    .steps { counter-reset: steps; list-style: none; padding: 0; }
+    .steps li { position: relative; margin: 12px 0; padding: 12px 14px 12px 48px; border: 1px solid var(--border); border-radius: 8px; background: #fcfdfe; }
+    .steps li::before { position: absolute; top: 11px; left: 13px; display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--blue); color: white; content: counter(steps); counter-increment: steps; font-size: 12px; font-weight: 800; }
+    .steps strong { display: block; }
+    .status-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 15px 0; }
+    .status { padding: 6px 10px; border-radius: 5px; background: #edf2f6; color: #45586c; font-size: 11px; font-weight: 800; }
+    .status.active { background: #fff3d5; color: var(--amber); }
+    .status.good { background: #e4f4eb; color: var(--green); }
+    .status.bad { background: #fbe9ea; color: var(--red); }
+    .status-arrow { color: var(--muted); font-weight: 800; }
+    .tree { white-space: pre; }
+    .top-link { display: inline-block; margin-top: 12px; font-size: 12px; font-weight: 700; text-decoration: none; }
+    footer { max-width: 1296px; margin: 0 auto; padding: 0 24px 30px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; gap: 14px; }
+      .toc { position: static; max-height: none; }
+      .toc-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 650px) {
+      .hero { padding: 38px 22px; }
+      .layout { margin-top: 15px; padding: 0 13px; }
+      .grid, .grid.three { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; gap: 8px; }
+      .flow-item:not(:last-child)::after { top: auto; right: 50%; bottom: -17px; content: "↓"; transform: translateX(50%); }
+      .toc-links { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+    @media print {
+      body { background: white; font-size: 11pt; }
+      .hero { padding: 24px; print-color-adjust: exact; }
+      .layout { display: block; max-width: none; margin: 16px 0; padding: 0; }
+      .toc, .top-link { display: none; }
+      .intro-card, section.panel { break-inside: avoid; box-shadow: none; }
+      section.panel { break-before: page; }
+      pre, .callout, .status { print-color-adjust: exact; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Perf Framework · Learning Guide</p>
+      <h1>Tech stack &amp; beginner guide</h1>
+      <p class="hero-copy">Understand the technologies, follow a test run from click to report, and find the right place in the code to start building.</p>
+      <div class="hero-meta">
+        <span class="pill">Node.js</span><span class="pill">Express</span><span class="pill">PostgreSQL</span>
+        <span class="pill">JMeter</span><span class="pill">Docker</span><span class="pill">InfluxDB + Grafana</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Guide contents">
+      <p class="toc-title">On this page</p>
+      <div class="toc-links">
+        <a href="#overview">1. What the app does</a>
+        <a href="#architecture">2. Architecture</a>
+        <a href="#stack">3. Technology stack</a>
+        <a href="#repository">4. Repository map</a>
+        <a href="#run-flow">5. A web run</a>
+        <a href="#results">6. Summaries &amp; baselines</a>
+        <a href="#run-local">7. Run it locally</a>
+        <a href="#workflow">8. Tests &amp; development</a>
+        <a href="#operations">9. Safety &amp; operations</a>
+        <a href="#learning">10. Learning path</a>
+        <a href="#references">11. More resources</a>
+      </div>
+    </nav>
+
+    <main>
+      <div class="intro-card">
+        <strong>Start here:</strong> this is a <strong>local, single-host JMeter runner</strong>. It is not yet a distributed load-testing platform.
+        <p class="lead">You do not need to master every technology before reading the code. Start with the run flow, then follow one step at a time from the browser to the server and database.</p>
+      </div>
+
+      <section class="panel" id="overview">
+        <p class="eyebrow">01 · PRODUCT OVERVIEW</p>
+        <h2>What the application does</h2>
+        <ol class="steps">
+          <li><strong>Define a scenario</strong>Give the test a name and configure virtual users, duration, and ramp-up.</li>
+          <li><strong>Upload a JMeter plan</strong>Select a `.jmx` file; the app validates its XML and records a version and hash.</li>
+          <li><strong>Run JMeter locally</strong>The Node.js app starts JMeter in a Docker container on the same machine.</li>
+          <li><strong>Monitor the test</strong>JMeter streams live metrics to InfluxDB, which Grafana visualizes.</li>
+          <li><strong>Review the results</strong>The app summarizes the JTL output and compares it with a matching earlier run.</li>
+        </ol>
+        <h3>Where each kind of data is stored</h3>
+        <table>
+          <thead><tr><th>Data</th><th>Storage</th><th>What to remember</th></tr></thead>
+          <tbody>
+            <tr><td>Scenario, script-version and run metadata</td><td>PostgreSQL</td><td>Structured records, relationships, status and summary.</td></tr>
+            <tr><td>JMX scripts and JTL/log artifacts</td><td>Local filesystem</td><td>Files are not stored in PostgreSQL.</td></tr>
+            <tr><td>Live time-series measurements</td><td>InfluxDB</td><td>Used for timestamped metrics and dashboard queries.</td></tr>
+            <tr><td>Charts and dashboards</td><td>Grafana</td><td>Visualizes InfluxDB metrics.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="architecture">
+        <p class="eyebrow">02 · HOW THE PIECES FIT</p>
+        <h2>Architecture at a glance</h2>
+        <div class="stack-diagram"><pre>Browser
+  │  HTTP, HTML/CSS, browser JavaScript
+  ▼
+Node.js + Express web application (localhost:4000)
+  ├── PostgreSQL (localhost:5433)
+  ├── local files: data/scripts/ and results/&lt;run-id&gt;/
+  └── Docker CLI
+        └── JMeter container
+              └── InfluxDB (Docker network)
+                    └── Grafana dashboard (localhost:3000)</pre></div>
+        <div class="grid three">
+          <article class="card"><h3>Host application</h3><p>Node.js and Express serve the UI/API and coordinate database, filesystem, and Docker work.</p></article>
+          <article class="card"><h3>Docker services</h3><p>Compose runs PostgreSQL, InfluxDB, and Grafana; JMeter runs in a per-test container.</p></article>
+          <article class="card"><h3>Local-only boundary</h3><p>One active web-managed run at a time. Remote worker scheduling and distributed execution are not implemented.</p></article>
+        </div>
+        <div class="callout">Docker Desktop supplies the container runtime on macOS. The app itself runs directly on the host; Docker containers use the laptop's CPU, memory, and disk.</div>
+      </section>
+
+      <section class="panel" id="stack">
+        <p class="eyebrow">03 · TECHNOLOGIES</p>
+        <h2>Technology stack</h2>
+
+        <h3>JavaScript and Node.js</h3>
+        <p><strong>JavaScript</strong> is the language used by the CLI, server, and browser UI. <strong>Node.js</strong> runs JavaScript outside the browser. The project uses ES modules:</p>
+        <pre><code>import path from 'node:path';
+import express from 'express';
+
+export function helper() {
+  // ...
+}</code></pre>
+        <ul>
+          <li><code>import</code> loads another module; <code>export</code> makes code available to other modules.</li>
+          <li><code>async</code>/<code>await</code> handles operations that complete later, such as SQL queries and file reads.</li>
+          <li><code>node:fs/promises</code> accesses files; <code>node:child_process</code> starts programs such as Docker.</li>
+          <li><code>"type": "module"</code> in <code>package.json</code> enables ES module syntax. The project requires Node.js 18 or newer.</li>
+        </ul>
+
+        <h3>npm</h3>
+        <p>npm installs packages and runs named project commands. <code>package.json</code> lists dependencies and scripts; <code>package-lock.json</code> records resolved versions; <code>node_modules/</code> is generated and should not be committed.</p>
+        <pre><code>npm install       # Install dependencies
+npm run web       # Start the web application
+npm test          # Run automated tests</code></pre>
+
+        <h3>Express and HTTP APIs</h3>
+        <p><strong>Express</strong> maps HTTP requests to route handlers. HTTP uses a method (what to do) and a path (which resource):</p>
+        <table>
+          <thead><tr><th>Route</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/scenarios</code></td><td>List scenarios.</td></tr>
+            <tr><td><code>POST /api/scenarios</code></td><td>Create a scenario.</td></tr>
+            <tr><td><code>POST /api/scenarios/:id/script</code></td><td>Upload a JMX script.</td></tr>
+            <tr><td><code>POST /api/scenarios/:id/runs</code></td><td>Start a run.</td></tr>
+            <tr><td><code>GET /api/runs/:runId/results</code></td><td>Get report and baseline data.</td></tr>
+          </tbody>
+        </table>
+        <p>Express middleware performs shared work before routes, such as parsing JSON and serving static files. See <a href="../web/server.js"><code>web/server.js</code></a>.</p>
+
+        <h3>HTML, CSS, and browser JavaScript</h3>
+        <div class="grid three">
+          <article class="card"><h4>HTML</h4><p><code>web/public/index.html</code> describes forms, navigation, and page sections.</p></article>
+          <article class="card"><h4>CSS</h4><p><code>web/public/styles.css</code> controls layout, colors, responsive behavior, and status badges.</p></article>
+          <article class="card"><h4>Browser JavaScript</h4><p><code>web/public/app.js</code> handles clicks, submits forms, calls APIs with <code>fetch</code>, and updates the page.</p></article>
+        </div>
+        <p>The browser's DOM (Document Object Model) is its live representation of the HTML. Regular API calls send JSON; file uploads use <code>FormData</code>.</p>
+
+        <h3>PostgreSQL and SQL</h3>
+        <p><strong>PostgreSQL</strong> is a relational database: tables contain rows and columns. Primary keys identify records; foreign keys link records.</p>
+        <div class="stack-diagram"><pre>scenarios 1 ── many scenario_script_versions
+scenarios 1 ── many test_runs</pre></div>
+        <ul>
+          <li><code>scenarios</code>: scenario name, load settings, and current script metadata.</li>
+          <li><code>scenario_script_versions</code>: one record per uploaded script revision, with path and SHA-256.</li>
+          <li><code>test_runs</code>: execution configuration snapshot, state, timestamps, and JSONB summary.</li>
+        </ul>
+        <p>The <code>pg</code> package connects Node.js to PostgreSQL. Use parameterized queries for values instead of building SQL strings from user input:</p>
+        <pre><code>await pool.query(
+  'SELECT * FROM scenarios WHERE id = $1',
+  [scenarioId]
+);</code></pre>
+        <p><code>$1</code> is a placeholder. The separate parameter value helps keep user input from changing the SQL command. <code>JSONB</code> stores the structured run summary as queryable JSON.</p>
+
+        <h3>Apache JMeter</h3>
+        <p><strong>Apache JMeter</strong> is the load-testing engine. A <code>.jmx</code> file is an XML test plan. JMeter runs non-GUI inside the custom image built from <a href="../jmeter/Dockerfile"><code>jmeter/Dockerfile</code></a>.</p>
+        <p>The framework provides runtime properties such as virtual users, duration, ramp-up, InfluxDB URL, application name, and run ID. The run ID associates emitted metrics with a specific execution. <a href="../cli/jmx.js"><code>cli/jmx.js</code></a> prepares the plan and adds the InfluxDB Backend Listener/run tag when needed.</p>
+
+        <h3>Docker and Docker Compose</h3>
+        <p><strong>Docker</strong> runs processes in containers with isolated filesystems and networking. Docker Compose describes a group of related services.</p>
+        <ul>
+          <li>Compose starts PostgreSQL, InfluxDB, and Grafana.</li>
+          <li>The app starts a JMeter container for a run.</li>
+          <li>Named volumes retain database/Grafana data when containers are recreated.</li>
+          <li>A bridge network lets containers reach each other by service name.</li>
+          <li>Bind mounts expose the prepared JMX and output folder to JMeter.</li>
+        </ul>
+        <p>See <a href="../infra/docker-compose.yml"><code>infra/docker-compose.yml</code></a> and <a href="../cli/docker.js"><code>cli/docker.js</code></a>. <code>docker compose down</code> retains named volumes by default; adding <code>-v</code> deletes those volumes and their data.</p>
+
+        <h3>InfluxDB and Grafana</h3>
+        <p><strong>InfluxDB</strong> stores time-series measurements: values associated with timestamps and filterable tags. JMeter's Backend Listener writes metrics to the <code>jmeter</code> database; this project configures one-day retention.</p>
+        <p><strong>Grafana</strong> queries InfluxDB as a data source and displays charts. The dashboard filters on scenario/application and run ID. PostgreSQL summaries support durable history/comparison; InfluxDB supports live time-based charts.</p>
+
+        <h3>Other npm packages</h3>
+        <table>
+          <thead><tr><th>Package</th><th>What it does here</th></tr></thead>
+          <tbody>
+            <tr><td><code>commander</code></td><td>Parses CLI commands and options.</td></tr>
+            <tr><td><code>pg</code></td><td>PostgreSQL client and connection pool.</td></tr>
+            <tr><td><code>multer</code></td><td>Receives uploaded files in Express.</td></tr>
+            <tr><td><code>xml2js</code></td><td>Parses uploaded JMeter XML.</td></tr>
+            <tr><td><code>csv-parse</code></td><td>Parses JTL CSV output.</td></tr>
+            <tr><td><code>hdr-histogram-js</code></td><td>Calculates latency percentiles with bounded memory.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="repository">
+        <p class="eyebrow">04 · FIND YOUR WAY AROUND</p>
+        <h2>Repository map</h2>
+        <div class="stack-diagram"><pre class="tree">cli/
+  index.js       CLI entry point
+  docker.js      Builds and runs Docker/JMeter commands
+  jmx.js         Validates and prepares JMeter test plans
+  run-id.js      Creates run identifiers
+
+web/
+  server.js      Express app, schema, API, run lifecycle
+  summary.js     JTL streaming parser and summary calculator
+  public/
+    index.html   UI structure
+    app.js       Browser behavior and API calls
+    results.js   Metric comparison helper
+    styles.css   UI styling
+
+infra/           Compose and Grafana provisioning
+jmeter/          Custom JMeter runtime image
+scripts/         Example test plans
+test/            Automated tests
+data/scripts/    Uploaded script versions (local files)
+results/         Per-run output artifacts (local files)
+docs/            Documentation</pre></div>
+      </section>
+
+      <section class="panel" id="run-flow">
+        <p class="eyebrow">05 · FOLLOW A TEST</p>
+        <h2>How a web run works</h2>
+        <div class="flow">
+          <div class="flow-item">Browser UI<small>User starts scenario</small></div>
+          <div class="flow-item">Express API<small>Validates &amp; records run</small></div>
+          <div class="flow-item">Docker / JMeter<small>Executes prepared plan</small></div>
+          <div class="flow-item">InfluxDB<small>Receives live metrics</small></div>
+          <div class="flow-item">Grafana<small>Charts by run ID</small></div>
+        </div>
+        <ol class="steps">
+          <li>The browser sends <code>POST /api/scenarios/:id/runs</code>.</li>
+          <li>Express loads the scenario and checks that a script has been uploaded.</li>
+          <li>The server creates a run ID and <code>results/&lt;run-id&gt;/</code>; it snapshots the source JMX.</li>
+          <li>PostgreSQL records the script hash/version and the exact run settings.</li>
+          <li><code>cli/jmx.js</code> prepares a JMX copy with the metrics listener/run tag.</li>
+          <li><code>cli/docker.js</code> starts a detached JMeter container and mounts the script read-only and the results directory for output.</li>
+          <li>JMeter writes the JTL/log files and streams live measurements to InfluxDB.</li>
+          <li>The server waits for JMeter to exit, summarizes the JTL, and stores the aggregate summary in PostgreSQL.</li>
+          <li>The UI polls run status; Grafana uses the run ID to filter charts.</li>
+        </ol>
+        <h3>Run states</h3>
+        <div class="status-flow">
+          <span class="status active">Starting</span><span class="status-arrow">→</span>
+          <span class="status active">Running</span><span class="status-arrow">→</span>
+          <span class="status good">Completed</span><span class="status bad">Failed</span><span class="status">Aborted</span>
+        </div>
+        <p>The database constraint currently allows one active run. On server restart, Docker labels help the app find and resume monitoring its active JMeter container.</p>
+      </section>
+
+      <section class="panel" id="results">
+        <p class="eyebrow">06 · UNDERSTAND THE REPORT</p>
+        <h2>Summaries and baseline comparison</h2>
+        <p>JTL is a CSV file containing individual sample outcomes such as elapsed time, label, and success. <a href="../web/summary.js"><code>web/summary.js</code></a> reads it as a stream, so the app does not need to load the entire file into memory.</p>
+        <p>As each row arrives, the summary code updates overall and per-label aggregates and records response times in HDR histograms. The final summary includes:</p>
+        <div class="grid three">
+          <article class="card"><h3>Volume &amp; errors</h3><p>Total samples, failed samples, and error rate.</p></article>
+          <article class="card"><h3>Latency</h3><p>Mean, p95, p99, and maximum response time.</p></article>
+          <article class="card"><h3>Transactions</h3><p>Separate totals and latency summaries for each JMeter label.</p></article>
+        </div>
+        <p>The Test Results page compares against the latest earlier completed run matching the same scenario, script hash, virtual users, duration, and ramp-up. That exact match helps make comparisons meaningful. If there is no matching baseline, the report says so.</p>
+      </section>
+
+      <section class="panel" id="run-local">
+        <p class="eyebrow">07 · GET HANDS-ON</p>
+        <h2>Run the application locally</h2>
+        <p>Install Docker Desktop/Engine, Docker Compose, Node.js 18+, and npm. From the project root:</p>
+        <pre><code># Start PostgreSQL, InfluxDB, and Grafana
+docker compose -f infra/docker-compose.yml up -d
+
+# Build the JMeter image (first time, or after Dockerfile changes)
+docker build -t perf-framework-jmeter:5.6.3 ./jmeter
+
+# Install JavaScript dependencies
+npm install
+
+# Start the web application
+npm run web</code></pre>
+        <p>Open <a href="http://localhost:4000">http://localhost:4000</a>. Create a scenario, upload a trusted `.jmx` plan, start a test, then visit Runtime Monitoring and Test Results.</p>
+        <h3>Run automated tests</h3>
+        <pre><code>npm test</code></pre>
+        <h3>Run with the CLI</h3>
+        <pre><code>node cli/index.js run \
+  --script scripts/sample.jmx \
+  --name smoke-test \
+  --threads 10 \
+  --duration 60 \
+  --rampup 10</code></pre>
+        <p>The CLI and web app both invoke JMeter in Docker. Start Compose first if you want live InfluxDB metrics.</p>
+      </section>
+
+      <section class="panel" id="workflow">
+        <p class="eyebrow">08 · BUILD WITH CONFIDENCE</p>
+        <h2>Tests and development workflow</h2>
+        <p>The project uses Node's built-in <code>node:test</code> runner and <code>node:assert/strict</code>; no additional test framework is needed.</p>
+        <table>
+          <thead><tr><th>Test file</th><th>Coverage</th></tr></thead>
+          <tbody>
+            <tr><td><code>test/docker.test.js</code></td><td>Docker argument construction and stop behavior.</td></tr>
+            <tr><td><code>test/jmx.test.js</code></td><td>JMX preparation and run-ID tagging.</td></tr>
+            <tr><td><code>test/summary.test.js</code></td><td>JTL aggregates and stream error handling.</td></tr>
+            <tr><td><code>test/results.test.js</code></td><td>Baseline metric comparisons.</td></tr>
+          </tbody>
+        </table>
+        <h3>When adding a feature</h3>
+        <ol class="steps">
+          <li>Identify which UI, API, persistence, and external-service layers are affected.</li>
+          <li>Validate input and use existing database patterns.</li>
+          <li>Use parameterized SQL and surface errors clearly.</li>
+          <li>Add a focused test for the new behavior.</li>
+          <li>Run <code>npm test</code> and <code>node --check path/to/changed-file.js</code>.</li>
+          <li>Update the guide or README if setup or user behavior changed.</li>
+        </ol>
+        <h3>Example: a read-only API endpoint</h3>
+        <pre><code>app.get('/api/example', asyncHandler(async (request, response) =&gt; {
+  const result = await pool.query(
+    'SELECT run_id, status FROM test_runs ORDER BY started_at DESC LIMIT 20'
+  );
+  response.json(result.rows);
+}));</code></pre>
+        <p>In the browser, use the existing <code>api()</code> helper:</p>
+        <pre><code>const recentRuns = await api('/api/example');</code></pre>
+        <p>For user-provided values, validate them and use SQL placeholders. Never turn arbitrary user input into a filesystem path.</p>
+      </section>
+
+      <section class="panel" id="operations">
+        <p class="eyebrow">09 · OPERATE RESPONSIBLY</p>
+        <h2>Safety and operations notes</h2>
+        <ul>
+          <li>JMX plans are executable test plans. Use only scripts and targets you trust and are authorized to test.</li>
+          <li>The web app is for local development, binds to loopback, and does not have user authentication.</li>
+          <li>Compose has development-only credentials and enables anonymous read-only Grafana access for the local dashboard. Do not expose these defaults as a shared service.</li>
+          <li>Scripts and run artifacts are files outside PostgreSQL; back them up separately if needed.</li>
+          <li>Docker volumes contain PostgreSQL, InfluxDB, and Grafana data. Removing volumes deletes their data.</li>
+          <li>The current product is single-host and permits one active web-managed run. It has no remote worker registry, queue, distributed scheduler, or high availability.</li>
+        </ul>
+        <div class="callout warning"><strong>Important:</strong> <code>docker compose down -v</code> deletes the named volumes and the data in them. Use <code>docker compose down</code> to stop/remove containers while retaining named-volume data.</div>
+      </section>
+
+      <section class="panel" id="learning">
+        <p class="eyebrow">10 · BEGINNER LEARNING PATH</p>
+        <h2>Suggested next steps</h2>
+        <ol class="steps">
+          <li><strong>JavaScript basics</strong>Functions, arrays, objects, modules, promises, and <code>async</code>/<code>await</code>.</li>
+          <li><strong>HTTP basics</strong>Methods, paths, status codes, JSON, and request/response.</li>
+          <li><strong>Trace one feature</strong>Follow an event in <code>web/public/app.js</code> to its route in <code>web/server.js</code>.</li>
+          <li><strong>SQL basics</strong><code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code>, keys, indexes, and transactions.</li>
+          <li><strong>Testing</strong>Run <code>npm test</code>, then read a test and the behavior it covers.</li>
+          <li><strong>Make a small change</strong>Add a focused feature, a test, and verify existing behavior.</li>
+          <li><strong>Docker basics</strong>Learn images, containers, volumes, bind mounts, and networks before changing execution.</li>
+        </ol>
+      </section>
+
+      <section class="panel" id="references">
+        <p class="eyebrow">11 · KEEP EXPLORING</p>
+        <h2>More resources in this project</h2>
+        <div class="grid">
+          <article class="card"><h3><a href="../README.md">README.md</a></h3><p>Concise setup instructions and user workflow.</p></article>
+          <article class="card"><h3><a href="./Perf-Framework-System-Design.pptx">System Design PowerPoint</a></h3><p>Current-state architecture diagrams and design summary.</p></article>
+          <article class="card"><h3><a href="../web/server.js">web/server.js</a></h3><p>Server routes, schema, persistence, and run orchestration.</p></article>
+          <article class="card"><h3><a href="../cli/docker.js">cli/docker.js</a></h3><p>JMeter Docker invocation and lifecycle helpers.</p></article>
+          <article class="card"><h3><a href="../cli/jmx.js">cli/jmx.js</a></h3><p>JMX preparation and metrics tagging.</p></article>
+          <article class="card"><h3><a href="../web/summary.js">web/summary.js</a></h3><p>JTL parsing and summary calculation.</p></article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <footer>Perf Framework · Beginner technology and codebase guide · Current local implementation</footer>
+</body>
+</html>
