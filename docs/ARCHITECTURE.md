@@ -19,8 +19,8 @@ For a beginner-friendly walkthrough of each technology, see [TECH-STACK-AND-BEGI
 
 | Component | Role |
 |---|---|
-| `web/` | UI, REST API, run orchestration, JTL summarising, baseline lookup |
-| `cli/` | Original command-line runner, plus shared helpers (JMX preparation, Docker, run IDs) used by the web app |
+| `web/` | UI, REST API, run orchestration, JTL summarising, baseline lookup, SLO verdicts (`slo.js`), HTML reports (`report.js`), notifications (`notify.js`) |
+| `cli/` | Original command-line runner and the CI gate (`ci.js`), plus shared helpers (JMX preparation, Docker, run IDs) used by the web app |
 | `mcp/` | MCP server wrapping the REST API for AI assistants ([MCP.md](./MCP.md)) |
 | `jmeter/` | JMeter 5.6.3 Docker image |
 | `infra/` | Docker Compose stack and Grafana provisioning |
@@ -31,7 +31,7 @@ For a beginner-friendly walkthrough of each technology, see [TECH-STACK-AND-BEGI
 2. The current script is snapshotted to `results/<run-id>/script.jmx` and its SHA-256 is recorded.
 3. `prepareJMX` adds the run-ID tag and InfluxDB Backend Listener settings, producing the prepared plan.
 4. JMeter starts as a detached container labelled `perf-framework.run-id=<run-id>`. The web app stores the container ID and waits for it to exit.
-5. On exit, the JTL is summarised as a stream with bounded-memory HDR histograms (overall and per label). The summary is saved as JSONB.
+5. On exit, the JTL is summarised as a stream with bounded-memory HDR histograms (overall and per label). The summary is saved as JSONB. If the scenario had SLO targets when the run started (they are snapshotted into the run record), the pass/fail verdict is computed and saved as `slo_result`. An optional webhook notification is then sent.
 6. If the web app restarts mid-run, it finds the labelled container and resumes monitoring. **Abort** stops the container with a 10-second graceful shutdown.
 
 The run ID is attached to metrics emitted by the InfluxDB Backend Listener and is used to filter the Grafana dashboard. Existing Backend Listeners in an uploaded JMX receive the run-ID tag when the plan is prepared.

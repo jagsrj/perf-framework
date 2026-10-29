@@ -47,6 +47,17 @@
           <label>Duration (seconds)<input name="duration" type="number" required min="1" max="86400" value="60"></label>
           <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0" value="10"></label>
         </div>
+        <fieldset class="slo-fields">
+          <legend>SLO targets <span class="muted">(optional · each run is marked pass/fail)</span></legend>
+          <div class="form-grid">
+            <label>p95 latency ≤ (ms)<input name="slo.p95Ms" type="number" min="0" step="any" placeholder="e.g. 800"></label>
+            <label>p99 latency ≤ (ms)<input name="slo.p99Ms" type="number" min="0" step="any"></label>
+            <label>Mean latency ≤ (ms)<input name="slo.averageMs" type="number" min="0" step="any"></label>
+            <label>Max latency ≤ (ms)<input name="slo.maxMs" type="number" min="0" step="any"></label>
+            <label>Error rate ≤ (%)<input name="slo.errorRatePercent" type="number" min="0" max="100" step="any" placeholder="e.g. 1"></label>
+          </div>
+          <label class="checkbox"><input name="slo.applyToTransactions" type="checkbox"> Apply targets to every transaction, not just overall</label>
+        </fieldset>
         <button class="primary" type="submit">Create scenario</button>
       </form>
       <div class="section-heading compact"><h3>Scenarios</h3><button class="quiet" id="refresh-scenarios">Refresh</button></div>
@@ -68,6 +79,17 @@
             <label>Duration (seconds)<input name="duration" type="number" required min="1" max="86400"></label>
             <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0"></label>
           </div>
+          <fieldset class="slo-fields">
+            <legend>SLO targets <span class="muted">(optional · each run is marked pass/fail)</span></legend>
+            <div class="form-grid">
+              <label>p95 latency ≤ (ms)<input name="slo.p95Ms" type="number" min="0" step="any" placeholder="e.g. 800"></label>
+              <label>p99 latency ≤ (ms)<input name="slo.p99Ms" type="number" min="0" step="any"></label>
+              <label>Mean latency ≤ (ms)<input name="slo.averageMs" type="number" min="0" step="any"></label>
+              <label>Max latency ≤ (ms)<input name="slo.maxMs" type="number" min="0" step="any"></label>
+              <label>Error rate ≤ (%)<input name="slo.errorRatePercent" type="number" min="0" max="100" step="any" placeholder="e.g. 1"></label>
+            </div>
+            <label class="checkbox"><input name="slo.applyToTransactions" type="checkbox"> Apply targets to every transaction, not just overall</label>
+          </fieldset>
           <button class="primary" type="submit">Save scenario</button>
         </form>
         <div class="divider"></div>

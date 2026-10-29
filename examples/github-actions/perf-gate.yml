@@ -1,0 +1,40 @@
+# Example performance gate. Copy to .github/workflows/perf-gate.yml in the repository you want to gate.
+#
+# Requirements: a self-hosted runner on the machine where perf-framework runs (Docker stack + `npm run web`),
+# because the web app only accepts localhost requests. Label the runner `perf`.
+name: Performance gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Scenario name or ID
+        required: true
+        default: checkout-smoke
+  # Or run after deploying to your performance environment:
+  # workflow_run:
+  #   workflows: [Deploy to perf]
+  #   types: [completed]
+
+jobs:
+  perf:
+    runs-on: [self-hosted, perf]
+    timeout-minutes: 90
+    steps:
+      - name: Run scenario and enforce its SLO
+        working-directory: ${{ vars.PERF_FRAMEWORK_DIR }}   # path to your perf-framework clone on the runner
+        run: |
+          node cli/index.js ci \
+            --scenario "${{ inputs.scenario || 'checkout-smoke' }}" \
+            --require-slo \
+            --junit "$RUNNER_TEMP/perf-junit.xml" \
+            --report "$RUNNER_TEMP/perf-report.html"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: |
+            ${{ runner.temp }}/perf-report.html
+            ${{ runner.temp }}/perf-junit.xml

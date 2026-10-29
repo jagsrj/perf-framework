@@ -2,6 +2,7 @@
 
 import { compareSummaries } from '../web/public/results.js';
 import { influxString } from './clients.js';
+import { evaluateSlo } from '../web/slo.js';
 
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 
@@ -89,38 +90,9 @@ export function compareRunSummaries(current, baseline, { tolerancePercent = 10 }
   };
 }
 
-const SLO_METRICS = {
-  averageMs: 'averageResponseMs',
-  p95Ms: 'p95ResponseMs',
-  p99Ms: 'p99ResponseMs',
-  maxMs: 'maxResponseMs',
-  errorRatePercent: 'errorRatePercent'
-};
-
-// Check a summary against upper-bound targets. Missing data counts as a failure, not a pass.
+// Ad-hoc SLO check (targets passed by the caller). Same logic as the automatic per-scenario verdict.
 export function checkSlo(summary, targets, { applyToTransactions = false } = {}) {
-  const active = Object.entries(SLO_METRICS).filter(([targetKey]) => Number.isFinite(targets[targetKey]));
-  if (!active.length) throw new Error('Provide at least one target (averageMs, p95Ms, p99Ms, maxMs or errorRatePercent).');
-
-  const evaluate = (scope, data) => active.map(([targetKey, summaryKey]) => {
-    const actual = data?.[summaryKey];
-    const hasValue = Number.isFinite(actual);
-    return {
-      scope,
-      metric: summaryKey,
-      target: targets[targetKey],
-      actual: hasValue ? round(actual) : null,
-      passed: hasValue && actual <= targets[targetKey],
-      note: hasValue ? undefined : 'no data'
-    };
-  });
-
-  const checks = evaluate('overall', summary);
-  if (applyToTransactions) {
-    for (const [label, data] of Object.entries(summary?.transactions || {})) checks.push(...evaluate(label, data));
-  }
-  const failures = checks.filter((check) => !check.passed);
-  return { passed: failures.length === 0, checked: checks.length, failed: failures.length, checks };
+  return evaluateSlo(summary, targets, { applyToTransactions });
 }
 
 export function liveMetricsQueries(scenarioName, runId, windowSeconds) {

@@ -61,3 +61,11 @@ test('surfaces source stream errors without an unhandled stream exception', asyn
     /ENOENT/
   );
 });
+
+test('percentiles never exceed the observed maximum', () => {
+  const rows = ['timeStamp,elapsed,label,responseCode,success'];
+  for (let i = 1; i <= 200; i++) rows.push(`${i},${i % 50 === 0 ? 900 : 100 + (i % 300)},search,200,true`);
+  const summary = summarizeJtl(rows.join('\n'));
+  assert.equal(summary.maxResponseMs, 900);
+  assert.ok(summary.p99ResponseMs <= 900, `p99 ${summary.p99ResponseMs} > max`);
+});

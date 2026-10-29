@@ -46,7 +46,8 @@ function percentile(aggregate, percent) {
   const positiveCount = aggregate.responseTimeCount - aggregate.zeroResponseTimes;
   const positiveRank = rank - aggregate.zeroResponseTimes;
   const positivePercentile = (positiveRank / positiveCount) * 100;
-  return aggregate.histogram.getValueAtPercentile(positivePercentile);
+  // HDR histograms round to bucket boundaries; never report a percentile above the observed maximum.
+  return Math.min(aggregate.histogram.getValueAtPercentile(positivePercentile), aggregate.maxResponseMs);
 }
 
 function summarizeAggregate(aggregate) {

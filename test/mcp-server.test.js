@@ -108,7 +108,7 @@ test('exposes the expected tools', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     'abort_run', 'check_health', 'check_slo', 'compare_runs', 'create_scenario', 'get_live_metrics',
-    'get_run', 'get_run_results', 'get_script', 'list_runs', 'list_scenarios', 'run_scenario',
+    'get_report_url', 'get_run', 'get_run_results', 'get_script', 'get_trends', 'list_runs', 'list_scenarios', 'run_scenario',
     'update_scenario', 'upload_script'
   ]);
 });

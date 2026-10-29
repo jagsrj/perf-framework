@@ -14,6 +14,39 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 })[character]);
 
+const SLO_KEYS = ['p95Ms', 'p99Ms', 'averageMs', 'maxMs', 'errorRatePercent'];
+const SLO_LABELS = { p95Ms: 'p95', p99Ms: 'p99', averageMs: 'mean', maxMs: 'max', errorRatePercent: 'errors' };
+
+function sloFromForm(form) {
+  const slo = {};
+  for (const key of SLO_KEYS) {
+    const value = form.elements[`slo.${key}`].value.trim();
+    if (value !== '') slo[key] = Number(value);
+  }
+  if (!Object.keys(slo).length) return null;
+  slo.applyToTransactions = form.elements['slo.applyToTransactions'].checked;
+  return slo;
+}
+
+function setSloFields(form, slo) {
+  for (const key of SLO_KEYS) form.elements[`slo.${key}`].value = slo?.[key] ?? '';
+  form.elements['slo.applyToTransactions'].checked = Boolean(slo?.applyToTransactions);
+}
+
+function sloText(slo) {
+  if (!slo) return 'No SLO targets';
+  const parts = SLO_KEYS.filter((key) => Number.isFinite(slo[key]))
+    .map((key) => `${SLO_LABELS[key]} ≤ ${slo[key]}${key === 'errorRatePercent' ? '%' : ' ms'}`);
+  return `SLO: ${parts.join(', ')}${slo.applyToTransactions ? ' (per transaction)' : ''}`;
+}
+
+function sloBadge(run) {
+  if (!run.slo_result) return '';
+  return run.slo_result.passed
+    ? '<span class="status completed">SLO pass</span>'
+    : `<span class="status failed">SLO fail (${run.slo_result.failed}/${run.slo_result.checked})</span>`;
+}
+
 async function api(url, options = {}) {
   const response = await fetch(url, options);
   const contentType = response.headers.get('content-type') || '';
@@ -51,7 +84,7 @@ function renderScenarios() {
   $('#scenario-list').innerHTML = state.scenarios.length ? state.scenarios.map((scenario) => `
     <article class="scenario-card">
       <div class="card-title">${escapeHtml(scenario.name)}<span class="status">${scenario.has_script ? 'Script ready' : 'Needs script'}</span></div>
-      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up</div>
+      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>${escapeHtml(sloText(scenario.slo))}</div>
       <div class="card-actions">
         <button class="quiet" data-edit="${escapeHtml(scenario.id)}">Update</button>
         <button class="secondary" data-run="${escapeHtml(scenario.id)}" ${scenario.has_script ? '' : 'disabled'}>Execute</button>
@@ -74,6 +107,7 @@ function setForm(form, scenario) {
   form.elements.users.value = scenario.users;
   form.elements.duration.value = scenario.duration_seconds;
   form.elements.rampup.value = scenario.rampup_seconds;
+  setSloFields(form, scenario.slo);
 }
 
 function selectedUpdateScenario() {
@@ -114,7 +148,8 @@ function renderExecuteDetails() {
   $('#execute-details').innerHTML = scenario ? `
     <strong>${escapeHtml(scenario.name)}</strong><br>
     Script: ${escapeHtml(scenario.original_filename || scenario.script_name)}${scenario.has_script ? ` · version ${scenario.script_version}` : ''}<br>
-    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up
+    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>
+    ${escapeHtml(sloText(scenario.slo))}
     ${scenario.has_script ? '' : '<br><span class="status failed">Upload a script before running</span>'}
   ` : 'Select a scenario to review its configuration.';
 }
@@ -132,7 +167,8 @@ async function saveCreateScenario(event) {
       scriptName: form.get('scriptName'),
       users: form.get('users'),
       duration: form.get('duration'),
-      rampup: form.get('rampup')
+      rampup: form.get('rampup'),
+      slo: sloFromForm(createForm)
     })
   });
   if (scriptFile) {
@@ -173,7 +209,8 @@ async function saveUpdatedScenario(event) {
       scriptName: form.get('scriptName'),
       users: form.get('users'),
       duration: form.get('duration'),
-      rampup: form.get('rampup')
+      rampup: form.get('rampup'),
+      slo: sloFromForm(event.currentTarget)
     })
   });
   await loadScenarios();
@@ -203,7 +240,7 @@ function renderRuns() {
   } else {
     list.innerHTML = state.runs.map((run) => `
       <article class="run-card">
-        <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span></div>
+        <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>${sloBadge(run)}</div>
         <div class="card-meta">Run ${escapeHtml(run.run_id)}<br>${new Date(run.started_at).toLocaleString()} · ${run.users} users · ${run.duration_seconds}s</div>
         <div class="card-actions"><button class="secondary" data-monitor="${escapeHtml(run.run_id)}">Monitor run</button></div>
       </article>`).join('');
@@ -352,6 +389,18 @@ function resultValue(value, suffix = '') {
   return `${formatted}${suffix}`;
 }
 
+function renderSloVerdict(run) {
+  if (!run.slo) return '<div class="slo-verdict none">No SLO targets were set for this run.</div>';
+  if (!run.slo_result) return `<div class="slo-verdict none">SLO not evaluated · ${escapeHtml(sloText(run.slo))}</div>`;
+  const failedChecks = run.slo_result.checks.filter((check) => !check.passed);
+  return `<div class="slo-verdict ${run.slo_result.passed ? 'pass' : 'fail'}">
+    <strong>${run.slo_result.passed ? 'SLO passed' : `SLO failed · ${run.slo_result.failed} of ${run.slo_result.checked} checks`}</strong>
+    <span>${escapeHtml(sloText(run.slo))}</span>
+    ${failedChecks.length ? `<ul>${failedChecks.slice(0, 8).map((check) =>
+      `<li>${escapeHtml(check.scope)} · ${escapeHtml(check.label || check.metric)}: ${check.actual ?? 'no data'} (target ≤ ${check.target})</li>`).join('')}</ul>` : ''}
+  </div>`;
+}
+
 function renderResultsReport({ run, baseline }) {
   const report = $('#results-report');
   report.classList.remove('empty');
@@ -387,6 +436,7 @@ function renderResultsReport({ run, baseline }) {
       <span><strong>Ended</strong>${escapeHtml(endedAt)}</span>
       <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
     </div>
+    ${renderSloVerdict(run)}
     <div class="baseline-note">${baselineDescription}</div>
     <div class="results-table-wrap">
       <table class="results-table">
@@ -407,6 +457,10 @@ function renderResultsReport({ run, baseline }) {
           </tr>`;
         }).join('')}</tbody>
       </table>
+    </div>
+    <div class="report-actions">
+      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report" target="_blank" rel="noreferrer">Open HTML report ↗</a>
+      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report?download">Download report</a>
     </div>
     <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>
     ${run.status === 'completed' ? `
