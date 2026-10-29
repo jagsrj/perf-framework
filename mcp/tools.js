@@ -14,6 +14,14 @@ import {
 
 const scenarioId = z.string().uuid().describe('Scenario ID (UUID) from list_scenarios.');
 const runId = z.string().min(1).max(200).describe('Run ID from list_runs or run_scenario.');
+const sloSchema = z.object({
+  p95Ms: z.number().nonnegative().optional(),
+  p99Ms: z.number().nonnegative().optional(),
+  averageMs: z.number().nonnegative().optional(),
+  maxMs: z.number().nonnegative().optional(),
+  errorRatePercent: z.number().min(0).max(100).optional(),
+  applyToTransactions: z.boolean().optional().describe('Also apply the targets to every transaction.')
+}).describe('SLO targets (upper limits). Every run of the scenario is then marked pass/fail automatically.');
 
 function ok(data) {
   return { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] };
@@ -85,7 +93,8 @@ export function registerTools(server, { api, influx, config }) {
       scriptName: z.string().min(1).max(255).describe('Display name for the script, e.g. "login.jmx".'),
       users: z.number().int().min(1).describe('Virtual users (threads).'),
       duration: z.number().int().min(1).describe('Test duration in seconds.'),
-      rampup: z.number().int().min(0).describe('Ramp-up in seconds (must not exceed duration).')
+      rampup: z.number().int().min(0).describe('Ramp-up in seconds (must not exceed duration).'),
+      slo: sloSchema.optional()
     }
   }, async (input) => {
     assertWithinGuardrails(input, config);
@@ -94,14 +103,15 @@ export function registerTools(server, { api, influx, config }) {
 
   registerWrite('update_scenario', {
     title: 'Update scenario settings',
-    description: 'Changes a scenario name or load settings. Only the fields you pass are changed.',
+    description: 'Changes a scenario name, load settings or SLO targets. Only the fields you pass are changed; pass slo: null to remove the targets.',
     inputSchema: {
       scenarioId,
       name: z.string().min(1).max(120).optional(),
       scriptName: z.string().min(1).max(255).optional(),
       users: z.number().int().min(1).optional(),
       duration: z.number().int().min(1).optional(),
-      rampup: z.number().int().min(0).optional()
+      rampup: z.number().int().min(0).optional(),
+      slo: sloSchema.nullable().optional()
     },
     annotations: { idempotentHint: true }
   }, async ({ scenarioId: id, ...changes }) => {
@@ -255,7 +265,7 @@ export function registerTools(server, { api, influx, config }) {
 
   register('check_slo', {
     title: 'Check SLO targets',
-    description: 'Checks a completed run against latency and error-rate targets (upper limits) and reports pass/fail per metric, overall and optionally per transaction.',
+    description: 'Checks a completed run against latency and error-rate targets (upper limits) and reports pass/fail per metric, overall and optionally per transaction. With no targets, returns the automatic verdict from the SLOs stored on the scenario at run time.',
     inputSchema: {
       runId,
       p95Ms: z.number().positive().optional(),
@@ -268,7 +278,46 @@ export function registerTools(server, { api, influx, config }) {
     annotations: readOnly
   }, async ({ runId: id, applyToTransactions = false, ...targets }) => {
     const run = await api.getRun(id);
+    const hasTargets = Object.values(targets).some((value) => value !== undefined);
+    if (!hasTargets) {
+      if (!run.slo) throw new Error('No targets given and the run has no stored SLO. Pass targets such as p95Ms or errorRatePercent.');
+      if (!run.slo_result) throw new Error(`Run ${id} has stored SLO targets but no verdict yet (status: ${run.status}).`);
+      return ok({ runId: id, status: run.status, source: 'stored scenario SLO', targets: run.slo, ...run.slo_result });
+    }
     if (!run.summary) throw new Error(`Run ${id} has no summary (status: ${run.status}).`);
-    return ok({ runId: id, status: run.status, ...checkSlo(run.summary, targets, { applyToTransactions }) });
+    return ok({ runId: id, status: run.status, source: 'ad-hoc targets', ...checkSlo(run.summary, targets, { applyToTransactions }) });
+  });
+
+  register('get_trends', {
+    title: 'Get scenario trends',
+    description: 'Shows how a scenario performed across its recent completed runs (oldest first): throughput, error rate, mean/p95/p99 latency and SLO verdicts. Use it to spot gradual regressions across releases.',
+    inputSchema: {
+      scenarioId,
+      limit: z.number().int().min(2).max(200).default(20)
+    },
+    annotations: readOnly
+  }, async ({ scenarioId: id, limit = 20 }) => {
+    const { points } = await api.getTrends(id, limit);
+    const p95 = points.map((point) => point.p95ResponseMs).filter(Number.isFinite);
+    const changePercent = p95.length >= 2 && p95[0] ? ((p95.at(-1) - p95[0]) / p95[0]) * 100 : null;
+    return ok({
+      scenarioId: id,
+      runs: points.length,
+      p95ChangeFirstToLastPercent: changePercent === null ? null : Number(changePercent.toFixed(1)),
+      sloFailures: points.filter((point) => point.sloPassed === false).length,
+      note: 'Runs may differ in script version or load; check scriptVersion/users before comparing.',
+      points
+    });
+  });
+
+  register('get_report_url', {
+    title: 'Get HTML report link',
+    description: 'Returns links to the self-contained HTML report for a run (summary, SLO verdict, baseline comparison, per-transaction table), for viewing in a browser or attaching to a ticket.',
+    inputSchema: { runId },
+    annotations: readOnly
+  }, async ({ runId: id }) => {
+    const run = await api.getRun(id);
+    const url = `${config.webBaseUrl}/api/runs/${encodeURIComponent(run.run_id)}/report`;
+    return ok({ runId: run.run_id, status: run.status, reportUrl: url, downloadUrl: `${url}?download` });
   });
 }

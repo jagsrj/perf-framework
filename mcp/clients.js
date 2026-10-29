@@ -70,6 +70,7 @@ export class PerfApiClient {
   listRuns() { return this.request('GET', '/api/runs'); }
   getRun(runId) { return this.request('GET', `/api/runs/${encodeURIComponent(runId)}`); }
   getRunResults(runId) { return this.request('GET', `/api/runs/${encodeURIComponent(runId)}/results`); }
+  getTrends(id, limit) { return this.request('GET', `/api/scenarios/${encodeURIComponent(id)}/trends?limit=${limit}`); }
 
   async getScenario(id) {
     const scenarios = await this.listScenarios();

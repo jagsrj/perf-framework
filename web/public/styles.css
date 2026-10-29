@@ -166,3 +166,16 @@ footer { padding: 18px 0 30px; color: var(--muted); font-size: 12px; border-top:
   .results-table th, .results-table td { padding: 9px 8px; white-space: nowrap; }
   .dashboard-frame iframe { height: 650px; }
 }
+
+/* SLO targets and verdicts */
+.slo-fields { border: 1px solid var(--line, #d9e2ec); border-radius: 8px; padding: 12px 14px; margin: 4px 0 14px; }
+.slo-fields legend { font-weight: 600; padding: 0 6px; }
+.slo-fields .checkbox { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.slo-fields .checkbox input { width: auto; }
+.slo-verdict { border-radius: 8px; padding: 12px 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 4px; }
+.slo-verdict.pass { background: #e3f6ea; color: #1b7a43; }
+.slo-verdict.fail { background: #fdecea; color: #c62828; }
+.slo-verdict.none { background: #eef2f6; color: #486581; }
+.slo-verdict ul { margin: 4px 0 0 18px; padding: 0; }
+.report-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.card-title .status + .status { margin-left: 6px; }

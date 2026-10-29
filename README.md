@@ -11,6 +11,9 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 - Live Grafana dashboard filtered by run ID
 - Exact p95/p99 summaries per transaction, computed from the JTL in bounded memory
 - Automatic like-for-like baseline comparison
+- SLO targets per scenario, with an automatic pass/fail verdict on every run
+- CI/CD gate (`node cli/index.js ci`) with exit codes, JUnit XML and HTML report output
+- Shareable HTML reports, scenario trend data, and Slack/Teams/webhook notifications
 - Optional local AI explanation via Ollama
 - MCP tools for AI-assisted testing, with load guardrails
 - Original CLI runner
@@ -61,34 +64,45 @@ With the web app running, open Claude Code in this folder. It picks up [`.mcp.js
 
 ## Using the console
 
-1. **Create scenario:** enter a scenario name, script name, virtual users, duration and ramp-up.
+1. **Create scenario:** enter a scenario name, script name, virtual users, duration and ramp-up, plus optional SLO targets such as p95 ≤ 800 ms and errors ≤ 1%.
 2. **Update scenario:** select it, upload a `.jmx` (max 10 MB, validated as JMeter XML), review the stored XML and save any setting changes.
 3. **Execute scenario:** start a test. Only one run can be active at a time.
 4. **Runtime monitoring:** the most recent active run (or most recent run) is selected automatically, with its embedded Grafana dashboard, start time and estimated time remaining. **Abort test** stops it early. **Analyze summary** shows the stored summary.
-5. **Test results:** view a run's summary next to its baseline, which is the latest earlier completed run with the same scenario, script contents and load settings. **Explain with local AI** asks Ollama to interpret it.
+5. **Test results:** view a run's SLO verdict and summary next to its baseline, which is the latest earlier completed run with the same scenario, script contents and load settings. **Open/Download HTML report** gives you a shareable report. **Explain with local AI** asks Ollama to interpret the results.
 
 Treat uploaded test plans as executable code and run only scripts you trust.
 
 ## CLI
 
 ```bash
+# Standalone run (no web app needed)
 node cli/index.js run --script scripts/sample.jmx --name smoke-test --threads 10 --duration 600 --rampup 10
+
+# CI gate: run a saved scenario via the web app; exit 0 = pass, 1 = SLO failed, 2 = run failed
+node cli/index.js ci --scenario checkout-smoke --require-slo --junit perf-junit.xml --report perf-report.html
 ```
 
-This runs a 10-minute, 10-user test and writes JTL and log files under `results/`. Start the Compose stack first if you want dashboard monitoring.
+The standalone run writes JTL and log files under `results/`. Start the Compose stack first if you want dashboard monitoring. The CI gate, JUnit output, and GitHub Actions and Jenkins examples are covered in [docs/CI.md](docs/CI.md).
+
+### Notifications
+
+Export `NOTIFY_WEBHOOK_URL` (Slack by default; set `NOTIFY_WEBHOOK_FORMAT=teams` or `json` for others) before `npm run web` to get a message when each run finishes. See [docs/CI.md](docs/CI.md#notifications).
 
 ## Project structure
 
 ```
-cli/        Command-line runner, plus JMX/Docker/run-ID helpers shared with the web app
-web/        Express server (REST API, run orchestration), JTL summary, Ollama analysis
+cli/        Command-line runner and CI gate, plus JMX/Docker/run-ID helpers shared with the web app
+web/        Express server (REST API, run orchestration), JTL summary, SLO evaluation,
+            HTML report, notifications, Ollama analysis
 web/public/ Browser UI
 mcp/        MCP server: config, HTTP clients, analysis helpers, tool definitions
 jmeter/     JMeter 5.6.3 Docker image
 infra/      Docker Compose stack and Grafana provisioning
 scripts/    Sample JMX plans
 test/       node:test suites (no services needed)
-docs/       Architecture, MCP, API, configuration and beginner guides
+docs/       Architecture, MCP, CI/SLO, API, configuration and beginner guides
+examples/   CI pipeline templates (GitHub Actions perf gate)
+.github/    Workflow that runs the test suite on every push and PR
 data/       Uploaded script versions (git-ignored)
 results/    Per-run artifacts (git-ignored)
 ```
@@ -99,6 +113,7 @@ results/    Per-run artifacts (git-ignored)
 |---|---|
 | [Architecture and data lifecycle](docs/ARCHITECTURE.md) | Components, run flow, storage, design decisions |
 | [MCP server](docs/MCP.md) | AI-assisted testing with Claude |
+| [SLOs and CI gates](docs/CI.md) | Pass/fail targets, pipeline gating, reports, notifications |
 | [REST API](docs/API.md) | Endpoints and payloads |
 | [Configuration](docs/CONFIGURATION.md) | Environment variables and ports |
 | [Tech stack and beginner guide](docs/TECH-STACK-AND-BEGINNER-GUIDE.md) | Learn the stack from scratch |
