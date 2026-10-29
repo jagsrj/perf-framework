@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "perf-framework": {
+      "command": "node",
+      "args": ["mcp/server.js"],
+      "env": {
+        "PERF_WEB_URL": "http://localhost:4000",
+        "MCP_MAX_USERS": "200",
+        "MCP_MAX_DURATION_SECONDS": "3600"
+      }
+    }
+  }
+}

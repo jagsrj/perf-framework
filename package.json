@@ -1,25 +1,31 @@
 {
   "name": "perf-framework",
   "version": "1.0.0",
-  "description": "A distributed performance testing framework using Apache JMeter.",
+  "description": "A local JMeter performance-testing console with an MCP server for AI-assisted test runs and analysis.",
   "main": "cli/index.js",
   "scripts": {
     "start": "node cli/index.js",
     "web": "node web/server.js",
+    "mcp": "node mcp/server.js",
     "test": "node --test"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "commander": "^9.5.0",
     "csv-parse": "^7.0.3",
     "express": "^4.21.2",
     "hdr-histogram-js": "^3.0.1",
     "multer": "^2.0.0",
     "pg": "^8.13.1",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "license": "MIT",
-  "type": "module"
+  "type": "module",
+  "bin": {
+    "perf-framework-mcp": "mcp/server.js"
+  }
 }

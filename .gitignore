@@ -3,3 +3,8 @@ results/*
 !results/.gitkeep
 data/*
 !data/.gitkeep
+
+# Local environment and OS files
+.env
+.DS_Store
+*.log

@@ -55,7 +55,10 @@ test('surfaces errors returned by Ollama', async () => {
   );
 });
 
-test('reports a timeout when Ollama does not respond in time', async () => {
+test('reports a timeout when Ollama does not respond in time', async (t) => {
+  // The production timer is unref'd, so keep the event loop alive long enough for it to fire.
+  const keepAlive = setTimeout(() => {}, 1000);
+  t.after(() => clearTimeout(keepAlive));
   await assert.rejects(
     analyzeWithOllama({ samples: 1 }, null, {
       timeoutMs: 1,
