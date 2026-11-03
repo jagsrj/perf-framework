@@ -7,7 +7,7 @@
     "start": "node cli/index.js",
     "web": "node web/server.js",
     "mcp": "node mcp/server.js",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,6 +21,7 @@
     "hdr-histogram-js": "^3.0.1",
     "multer": "^2.0.0",
     "pg": "^8.13.1",
+    "tar": "^7.5.22",
     "xml2js": "^0.6.2",
     "zod": "^4.6.7"
   },

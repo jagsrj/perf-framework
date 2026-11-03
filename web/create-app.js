@@ -5,15 +5,22 @@ import path from 'node:path';
 import express from 'express';
 import { hostGuard, requireApiKey } from './auth.js';
 import { asyncHandler, respondError } from './http.js';
+import { listShared } from './shared-drive.js';
 import { runsRouter } from './routes/runs.js';
 import { scenariosRouter } from './routes/scenarios.js';
 
-export function createApp({ pool, runs, config, analyze }) {
+export function createApp({ pool, runs, config, analyze, agents = null }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(hostGuard({ port: config.port, allowedHosts: config.allowedHosts }));
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(config.publicDir));
+  // Load generators authenticate with PERF_AGENT_TOKEN instead of the API key.
+  if (agents) app.use('/api/agent', agents.router);
+  else
+    app.use('/api/agent', (request, response) =>
+      response.status(503).json({ error: 'Remote load generators are disabled.' })
+    );
   app.use('/api', requireApiKey(config.apiKey));
 
   app.get(
@@ -24,7 +31,14 @@ export function createApp({ pool, runs, config, analyze }) {
     })
   );
   app.use('/api/scenarios', scenariosRouter({ pool, runs, config }));
-  app.use('/api/runs', runsRouter({ pool, runs, config, analyze }));
+  app.use('/api/runs', runsRouter({ pool, runs, config, analyze, agents }));
+  if (agents) app.use('/api/load-generators', agents.adminRouter);
+  app.get(
+    '/api/shared',
+    asyncHandler(async (request, response) => {
+      response.json(await listShared(config));
+    })
+  );
   app.use('/api', (request, response) => response.status(404).json({ error: 'Not found.' }));
 
   app.get('*', (request, response) => {

@@ -41,6 +41,30 @@ Validation: name ≤ 120 characters, script name ≤ 255, users 1–100000, dura
 
 `slo` is optional. The allowed targets are `p95Ms`, `p99Ms`, `averageMs`, `maxMs` and `errorRatePercent` (0–100), plus `applyToTransactions`. On `PUT`, leaving out `slo` keeps the current targets, and `"slo": null` removes them. Unknown keys are rejected with `400`. Scenario responses include `slo`.
 
+### Script source, plugins and load generators
+
+Optional fields on create/update (omitted = default for a new scenario, unchanged on `PUT`):
+
+| Field | Meaning |
+|---|---|
+| `scriptSource` | `"upload"` (default) or `"shared"` |
+| `sharedScript` | Path of a `.jmx` under the shared drive's `scripts/`, e.g. `"checkout/checkout.jmx"`. Its folder's files go with it |
+| `plugins` | Jar paths under the shared drive's `plugins/`, e.g. `["jmeter-plugins-casutg-2.10.jar"]` |
+| `loadGeneratorIds` | Remote load generator IDs to run on. `[]` = local Docker (then `generators` sets the local container count) |
+
+`slo` also accepts `abortOnFail: true` and `abortDelaySeconds` (warm-up, default 60) for live aborts.
+
+## Shared drive and load generators
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/shared` | `{ scripts: [{ path, folder, dataFiles, bundleBytes }], plugins: [{ path, sizeBytes }] }` |
+| GET | `/api/load-generators` | `{ enabled, generators: [{ id, name, hostname, jmeter_version, max_threads, enabled, last_seen_at, status, active_run }] }`. `status` is `online`, `busy`, `offline` or `disabled` |
+| PATCH | `/api/load-generators/:id` | `{ "enabled": false }` to keep a generator out of new runs |
+| DELETE | `/api/load-generators/:id` | Remove (disables instead if it has run history) |
+
+The agent-facing endpoints under `/api/agent/` use `PERF_AGENT_TOKEN` and are described in [LOAD-GENERATORS.md](./LOAD-GENERATORS.md).
+
 ## Runs
 
 | Method | Path | Description |
@@ -52,7 +76,7 @@ Validation: name ≤ 120 characters, script name ≤ 255, users 1–100000, dura
 | POST | `/api/runs/:runId/abort` | Stop an active run (`409` if not active) |
 | POST | `/api/runs/:runId/ai-analysis` | Ollama explanation of a completed run's summary and baseline |
 
-Run `status` values: `starting`, `running`, `completed`, `failed`, `aborted`.
+Run `status` values: `starting`, `running`, `completed`, `failed`, `aborted`. Aborted runs have `aborted_by`: `user` or `slo` (live SLO check). Runs record `execution` (`local` or `agents`), `script_source` and `plugins`, and `GET /api/runs/:runId` adds `loadGenerators`: each remote generator's users, status, exit code and bytes of results received.
 
 Run records also include `slo`, the targets snapshotted at start, and `slo_result`, the verdict computed when the run finishes:
 

@@ -61,7 +61,7 @@ function summarizeAggregate(aggregate) {
   };
 }
 
-function createCollector() {
+export function createCollector() {
   const overall = createAggregate();
   const transactions = new Map();
   return {

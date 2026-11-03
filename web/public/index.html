@@ -21,6 +21,7 @@
       <button class="tab" data-view="execute">Execute scenario</button>
       <button class="tab" data-view="runtime">Runtime monitoring</button>
       <button class="tab" data-view="results">Test results</button>
+      <button class="tab" data-view="generators">Load generators</button>
     </nav>
 
     <main>
@@ -48,16 +49,51 @@
               MB.
             </p>
           </div>
+          <fieldset class="source-fields">
+            <legend>Script source</legend>
+            <div class="choice-row">
+              <label class="checkbox"
+                ><input type="radio" name="scriptSource" value="upload" checked /> Upload a .jmx file</label
+              >
+              <label class="checkbox"><input type="radio" name="scriptSource" value="shared" /> Shared drive</label>
+            </div>
+            <div class="shared-only" hidden>
+              <label>Script on the shared drive<select name="sharedScript"></select></label>
+              <p class="help shared-files"></p>
+            </div>
+            <div class="plugin-picker">
+              <p class="field-label">
+                JMeter plugins <span class="muted">(sent to every load generator with the script)</span>
+              </p>
+              <div class="check-list plugin-list"></div>
+            </div>
+          </fieldset>
           <div class="form-grid">
             <label>Virtual users<input name="users" type="number" required min="1" max="100000" value="10" /></label>
             <label
               >Duration (seconds)<input name="duration" type="number" required min="1" max="86400" value="60"
             /></label>
             <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0" value="10" /></label>
-            <label title="Number of JMeter containers that share the virtual users"
-              >Load generators<input name="generators" type="number" required min="1" max="100" value="1"
-            /></label>
           </div>
+          <fieldset class="generator-fields">
+            <legend>Load generators</legend>
+            <div class="choice-row">
+              <label class="checkbox"
+                ><input type="radio" name="runOn" value="local" checked /> This machine (Docker)</label
+              >
+              <label class="checkbox"><input type="radio" name="runOn" value="remote" /> Remote load generators</label>
+            </div>
+            <div class="local-only">
+              <label title="Number of JMeter containers on this machine that share the virtual users"
+                >JMeter containers<input name="generators" type="number" min="1" max="100" value="1"
+              /></label>
+            </div>
+            <div class="remote-only" hidden>
+              <div class="check-list generator-list"></div>
+              <p class="help generator-help"></p>
+              <button class="quiet refresh-generators" type="button">Refresh list</button>
+            </div>
+          </fieldset>
           <fieldset class="slo-fields">
             <legend>SLO targets <span class="muted">(optional · each run is marked pass/fail)</span></legend>
             <div class="form-grid">
@@ -81,6 +117,19 @@
               ><input name="slo.applyToTransactions" type="checkbox" /> Apply targets to every transaction, not just
               overall</label
             >
+            <div class="live-abort">
+              <label class="checkbox"
+                ><input name="slo.abortOnFail" type="checkbox" /> Abort the run early if a target is breached</label
+              >
+              <label
+                >Warm-up before checking (seconds)<input
+                  name="slo.abortDelaySeconds"
+                  type="number"
+                  min="0"
+                  max="86400"
+                  placeholder="60"
+              /></label>
+            </div>
           </fieldset>
           <button class="primary" type="submit">Create scenario</button>
         </form>
@@ -104,14 +153,51 @@
           <form id="update-form">
             <label>Scenario name<input name="name" required maxlength="120" /></label>
             <label>Script name<input name="scriptName" required maxlength="255" /></label>
+            <fieldset class="source-fields">
+              <legend>Script source</legend>
+              <div class="choice-row">
+                <label class="checkbox"
+                  ><input type="radio" name="scriptSource" value="upload" checked /> Upload a .jmx file</label
+                >
+                <label class="checkbox"><input type="radio" name="scriptSource" value="shared" /> Shared drive</label>
+              </div>
+              <div class="shared-only" hidden>
+                <label>Script on the shared drive<select name="sharedScript"></select></label>
+                <p class="help shared-files"></p>
+              </div>
+              <div class="plugin-picker">
+                <p class="field-label">
+                  JMeter plugins <span class="muted">(sent to every load generator with the script)</span>
+                </p>
+                <div class="check-list plugin-list"></div>
+              </div>
+            </fieldset>
             <div class="form-grid">
               <label>Virtual users<input name="users" type="number" required min="1" max="100000" /></label>
               <label>Duration (seconds)<input name="duration" type="number" required min="1" max="86400" /></label>
               <label>Ramp-up (seconds)<input name="rampup" type="number" required min="0" /></label>
-              <label title="Number of JMeter containers that share the virtual users"
-                >Load generators<input name="generators" type="number" required min="1" max="100"
-              /></label>
             </div>
+            <fieldset class="generator-fields">
+              <legend>Load generators</legend>
+              <div class="choice-row">
+                <label class="checkbox"
+                  ><input type="radio" name="runOn" value="local" checked /> This machine (Docker)</label
+                >
+                <label class="checkbox"
+                  ><input type="radio" name="runOn" value="remote" /> Remote load generators</label
+                >
+              </div>
+              <div class="local-only">
+                <label title="Number of JMeter containers on this machine that share the virtual users"
+                  >JMeter containers<input name="generators" type="number" min="1" max="100" value="1"
+                /></label>
+              </div>
+              <div class="remote-only" hidden>
+                <div class="check-list generator-list"></div>
+                <p class="help generator-help"></p>
+                <button class="quiet refresh-generators" type="button">Refresh list</button>
+              </div>
+            </fieldset>
             <fieldset class="slo-fields">
               <legend>SLO targets <span class="muted">(optional · each run is marked pass/fail)</span></legend>
               <div class="form-grid">
@@ -135,6 +221,19 @@
                 ><input name="slo.applyToTransactions" type="checkbox" /> Apply targets to every transaction, not just
                 overall</label
               >
+              <div class="live-abort">
+                <label class="checkbox"
+                  ><input name="slo.abortOnFail" type="checkbox" /> Abort the run early if a target is breached</label
+                >
+                <label
+                  >Warm-up before checking (seconds)<input
+                    name="slo.abortDelaySeconds"
+                    type="number"
+                    min="0"
+                    max="86400"
+                    placeholder="60"
+                /></label>
+              </div>
             </fieldset>
             <button class="primary" type="submit">Save scenario</button>
           </form>
@@ -214,6 +313,29 @@
           >
         </div>
         <div id="dashboard-frame" class="dashboard-frame empty">Select a run to load its dashboard.</div>
+      </section>
+
+      <section class="view" id="view-generators" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">INFRASTRUCTURE</p>
+            <h2>Load generators</h2>
+          </div>
+          <p>
+            Machines running the perf-framework agent. They register themselves; choose them per scenario under
+            <strong>Load generators</strong>.
+          </p>
+        </div>
+        <div class="form-card">
+          <div class="section-heading compact">
+            <h3>Registered generators</h3>
+            <button class="quiet" id="refresh-generators">Refresh</button>
+          </div>
+          <div id="generator-table"></div>
+          <div class="divider"></div>
+          <h3>Shared drive</h3>
+          <div id="shared-summary" class="muted"></div>
+        </div>
       </section>
 
       <section class="view" id="view-results" hidden>

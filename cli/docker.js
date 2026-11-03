@@ -40,6 +40,7 @@ export function jmeterRunArgs({
   rampup,
   resultsDir,
   generator = null,
+  pluginDir = null,
   env = process.env,
   user = containerUser(env)
 }) {
@@ -76,6 +77,14 @@ export function jmeterRunArgs({
     `-JrunId=${runId}`
   );
   if (generator !== null) args.push(`-Jgenerator=${generator}`);
+  if (pluginDir) {
+    // Plugin jars from the shared drive, copied into the bundle next to the script.
+    const inContainer = path.posix.join(
+      '/scripts',
+      path.relative(scriptDir, path.resolve(pluginDir)).split(path.sep).join('/')
+    );
+    args.push(`-Jsearch_paths=${inContainer}`, `-Juser.classpath=${inContainer}`);
+  }
   return args;
 }
 

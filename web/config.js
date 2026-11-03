@@ -26,6 +26,19 @@ export function loadConfig(env = process.env) {
     // Upper limit for load generators (JMeter containers) per run.
     maxGenerators: Number(env.PERF_MAX_GENERATORS || 10),
     influxdbUrl: env.INFLUXDB_URL || 'http://influxdb:8086/write?db=jmeter',
+    // Shared drive with scripts/ and plugins/ (see docs/LOAD-GENERATORS.md).
+    sharedDir: path.resolve(env.PERF_SHARED_DIR || path.join(projectRoot, 'data', 'shared')),
+    maxBundleBytes: Number(env.PERF_MAX_BUNDLE_MB || 200) * 1024 * 1024,
+    // Remote load generators. Agent endpoints are off unless PERF_AGENT_TOKEN is set.
+    agentToken: env.PERF_AGENT_TOKEN || null,
+    // InfluxDB write URL as seen from the load generator machines (defaults to INFLUXDB_URL).
+    agentInfluxdbUrl: env.PERF_AGENT_INFLUXDB_URL || null,
+    agentHeartbeatSeconds: Number(env.PERF_AGENT_HEARTBEAT_SECONDS || 5),
+    agentTimeoutMs: Number(env.PERF_AGENT_TIMEOUT_SECONDS || 30) * 1000,
+    agentStartTimeoutMs: Number(env.PERF_AGENT_START_TIMEOUT_SECONDS || 120) * 1000,
+    // Live SLO checks (scenarios with slo.abortOnFail).
+    liveSloIntervalMs: Number(env.PERF_LIVE_SLO_INTERVAL_SECONDS || 10) * 1000,
+    liveSloMinSamples: Number(env.PERF_LIVE_SLO_MIN_SAMPLES || 20),
     grafanaBaseUrl: env.GRAFANA_BASE_URL || 'http://localhost:3000',
     databaseUrl:
       env.DATABASE_URL ||

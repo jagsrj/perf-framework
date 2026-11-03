@@ -15,6 +15,15 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `INFLUXDB_URL` | `http://influxdb:8086/write?db=jmeter` | Where JMeter (inside Docker) writes live metrics |
 | `GRAFANA_BASE_URL` | `http://localhost:3000` | Base for dashboard links |
 | `PERF_MAX_GENERATORS` | `10` | Most load generators (JMeter containers) one run may use |
+| `PERF_SHARED_DIR` | `data/shared` | Shared drive with `scripts/` and `plugins/` ([LOAD-GENERATORS.md](./LOAD-GENERATORS.md)) |
+| `PERF_MAX_BUNDLE_MB` | `200` | Largest script folder that can be sent with a run |
+| `PERF_AGENT_TOKEN` | (off) | Enables remote load generators; agents must send it. At least 24 characters, different from `PERF_API_KEY` |
+| `PERF_AGENT_INFLUXDB_URL` | `INFLUXDB_URL` | InfluxDB write URL as seen from the load generators |
+| `PERF_AGENT_HEARTBEAT_SECONDS` | `5` | How often agents check in |
+| `PERF_AGENT_TIMEOUT_SECONDS` | `30` | No heartbeat for this long = offline; a run on it fails |
+| `PERF_AGENT_START_TIMEOUT_SECONDS` | `120` | How long a generator has to pick up and start its part of a run |
+| `PERF_LIVE_SLO_INTERVAL_SECONDS` | `10` | How often live SLO checks run (scenarios with abort-on-breach) |
+| `PERF_LIVE_SLO_MIN_SAMPLES` | `20` | Samples needed before a live SLO check can abort |
 | `JMETER_IMAGE` | `perf-framework-jmeter:5.6.3` | JMeter Docker image |
 | `JMETER_DOCKER_USER` | Linux: the web app's `uid:gid`; elsewhere: the image's non-root `jmeter` user | `--user` for JMeter containers. Set `image` to never pass `--user` |
 | `JMETER_DOCKER_NETWORK` | `infra_jmeter-network` | Docker network shared with InfluxDB |

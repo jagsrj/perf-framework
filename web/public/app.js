@@ -7,7 +7,9 @@ const state = {
   selectedResultRunId: null,
   analyzedRunId: null,
   pollTimer: null,
-  remainingTimer: null
+  remainingTimer: null,
+  shared: { scripts: [], plugins: [] },
+  loadGenerators: { enabled: false, generators: [] }
 };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) =>
@@ -34,12 +36,19 @@ function sloFromForm(form) {
   }
   if (!Object.keys(slo).length) return null;
   slo.applyToTransactions = form.elements['slo.applyToTransactions'].checked;
+  if (form.elements['slo.abortOnFail'].checked) {
+    slo.abortOnFail = true;
+    const delay = form.elements['slo.abortDelaySeconds'].value.trim();
+    if (delay !== '') slo.abortDelaySeconds = Number(delay);
+  }
   return slo;
 }
 
 function setSloFields(form, slo) {
   for (const key of SLO_KEYS) form.elements[`slo.${key}`].value = slo?.[key] ?? '';
   form.elements['slo.applyToTransactions'].checked = Boolean(slo?.applyToTransactions);
+  form.elements['slo.abortOnFail'].checked = Boolean(slo?.abortOnFail);
+  form.elements['slo.abortDelaySeconds'].value = slo?.abortOnFail ? (slo.abortDelaySeconds ?? 60) : '';
 }
 
 function sloText(slo) {
@@ -47,7 +56,9 @@ function sloText(slo) {
   const parts = SLO_KEYS.filter((key) => Number.isFinite(slo[key])).map(
     (key) => `${SLO_LABELS[key]} ≤ ${slo[key]}${key === 'errorRatePercent' ? '%' : ' ms'}`
   );
-  return `SLO: ${parts.join(', ')}${slo.applyToTransactions ? ' (per transaction)' : ''}`;
+  return `SLO: ${parts.join(', ')}${slo.applyToTransactions ? ' (per transaction)' : ''}${
+    slo.abortOnFail ? ` · aborts early after ${slo.abortDelaySeconds ?? 60}s` : ''
+  }`;
 }
 
 function sloBadge(run) {
@@ -153,6 +164,8 @@ function showView(name, preferredRunId = null) {
   if (name === 'runtime') showCurrentRun(preferredRunId).catch((error) => notify(error.message));
   if (name === 'execute') loadRuns();
   if (name === 'results') loadResults().catch((error) => notify(error.message));
+  if (['generators', 'create', 'update', 'execute'].includes(name))
+    loadInfrastructure().catch((error) => notify(error.message));
 }
 
 function scenarioOptions(select, selectedId = '') {
@@ -165,6 +178,224 @@ function scenarioOptions(select, selectedId = '') {
   if (state.scenarios.some((scenario) => scenario.id === previous)) select.value = previous;
 }
 
+// ---- Scenario design: script source, plugins and load generators ----
+
+const checkedValues = (container) =>
+  [...container.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+const STATUS_CLASS = { online: 'completed', busy: 'running', offline: 'failed', disabled: 'aborted' };
+
+function generatorLabel(id) {
+  return state.loadGenerators.generators.find((generator) => generator.id === id)?.name || 'unknown generator';
+}
+
+function placeText(scenario) {
+  const remote = scenario.load_generator_ids || [];
+  if (remote.length) return ` · on ${remote.map((id) => escapeHtml(generatorLabel(id))).join(', ')}`;
+  return (scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} local containers` : '';
+}
+
+function sourceText(scenario) {
+  const plugins = scenario.plugins?.length
+    ? ` · ${scenario.plugins.length} plugin${scenario.plugins.length > 1 ? 's' : ''}`
+    : '';
+  if (scenario.script_source === 'shared') return `Shared drive: ${escapeHtml(scenario.shared_script)}${plugins}`;
+  return `${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''}${plugins}`;
+}
+
+function renderSourceFields(form, { source = 'upload', sharedScript = null, plugins = [] } = {}) {
+  const select = form.elements.sharedScript;
+  const scripts = state.shared.scripts;
+  const options = scripts.map(
+    (script) =>
+      `<option value="${escapeHtml(script.path)}">${escapeHtml(script.path)}${
+        script.dataFiles.length
+          ? ` (+${script.dataFiles.length} data file${script.dataFiles.length > 1 ? 's' : ''})`
+          : ''
+      }</option>`
+  );
+  if (sharedScript && !scripts.some((script) => script.path === sharedScript)) {
+    options.unshift(
+      `<option value="${escapeHtml(sharedScript)}">${escapeHtml(sharedScript)} (not found on the drive)</option>`
+    );
+  }
+  select.innerHTML = options.length
+    ? options.join('')
+    : '<option value="">No .jmx files on the shared drive yet</option>';
+  if (sharedScript) select.value = sharedScript;
+  form.querySelector(`input[name="scriptSource"][value="${source}"]`).checked = true;
+
+  const pluginList = form.querySelector('.plugin-list');
+  const known = new Set(state.shared.plugins.map((plugin) => plugin.path));
+  const all = [...state.shared.plugins.map((plugin) => plugin.path), ...plugins.filter((plugin) => !known.has(plugin))];
+  pluginList.innerHTML = all.length
+    ? all
+        .map(
+          (plugin) =>
+            `<label class="checkbox"><input type="checkbox" value="${escapeHtml(plugin)}" ${
+              plugins.includes(plugin) ? 'checked' : ''
+            } /> ${escapeHtml(plugin)}${known.has(plugin) ? '' : ' <span class="muted">(missing)</span>'}</label>`
+        )
+        .join('')
+    : '<p class="muted">No plugins in the shared drive\'s plugins folder.</p>';
+  updateSourceVisibility(form);
+}
+
+function updateSourceVisibility(form) {
+  const shared = form.elements.scriptSource.value === 'shared';
+  form.querySelector('.shared-only').hidden = !shared;
+  const script = state.shared.scripts.find((item) => item.path === form.elements.sharedScript.value);
+  form.querySelector('.shared-files').textContent = script
+    ? script.dataFiles.length
+      ? `Sent with the script: ${script.dataFiles.join(', ')}`
+      : 'No data files next to this script.'
+    : '';
+  if (shared && script) form.elements.scriptName.value = script.path.split('/').pop();
+  const locate = form.querySelector('.script-name-field .help');
+  if (locate) locate.hidden = shared;
+  const locateButton = form.querySelector('#locate-script');
+  if (locateButton) locateButton.disabled = shared;
+}
+
+function renderGeneratorFields(form, { ids = [], localCount = 1 } = {}) {
+  const { enabled, generators } = state.loadGenerators;
+  const list = form.querySelector('.generator-list');
+  const known = new Set(generators.map((generator) => generator.id));
+  list.innerHTML = generators.length
+    ? generators
+        .map((generator) => {
+          const details = [
+            generator.hostname,
+            generator.jmeter_version ? `JMeter ${generator.jmeter_version}` : null,
+            generator.max_threads ? `max ${generator.max_threads} users` : null
+          ]
+            .filter(Boolean)
+            .map(escapeHtml)
+            .join(' · ');
+          return `<label class="checkbox generator-option"><input type="checkbox" value="${escapeHtml(generator.id)}" ${
+            ids.includes(generator.id) ? 'checked' : ''
+          } /> <strong>${escapeHtml(generator.name)}</strong> <span class="status ${STATUS_CLASS[generator.status] || ''}">${escapeHtml(
+            generator.status
+          )}</span> <span class="muted">${details}</span></label>`;
+        })
+        .join('') +
+      ids
+        .filter((id) => !known.has(id))
+        .map(
+          (id) =>
+            `<label class="checkbox"><input type="checkbox" value="${escapeHtml(id)}" checked /> Removed generator</label>`
+        )
+        .join('')
+    : '';
+  form.querySelector('.generator-help').textContent = !enabled
+    ? 'Remote load generators are off. Set PERF_AGENT_TOKEN on the controller and start the agent on each machine (docs/LOAD-GENERATORS.md).'
+    : generators.length
+      ? 'Users are split evenly across the selected generators. Every selected generator must be online when the run starts.'
+      : 'No load generators have registered yet. Start the agent on a machine and refresh.';
+  form.querySelector(`input[name="runOn"][value="${ids.length ? 'remote' : 'local'}"]`).checked = true;
+  form.elements.generators.value = localCount;
+  updateGeneratorVisibility(form);
+}
+
+function updateGeneratorVisibility(form) {
+  const remote = form.elements.runOn.value === 'remote';
+  form.querySelector('.remote-only').hidden = !remote;
+  form.querySelector('.local-only').hidden = remote;
+}
+
+function designFromForm(form) {
+  const shared = form.elements.scriptSource.value === 'shared';
+  const remote = form.elements.runOn.value === 'remote';
+  const loadGeneratorIds = remote ? checkedValues(form.querySelector('.generator-list')) : [];
+  if (remote && !loadGeneratorIds.length) throw new Error('Select at least one remote load generator.');
+  if (shared && !form.elements.sharedScript.value) throw new Error('Choose a script from the shared drive.');
+  return {
+    scriptSource: shared ? 'shared' : 'upload',
+    ...(shared ? { sharedScript: form.elements.sharedScript.value } : {}),
+    plugins: checkedValues(form.querySelector('.plugin-list')),
+    loadGeneratorIds,
+    ...(remote ? {} : { generators: form.elements.generators.value || 1 })
+  };
+}
+
+function currentDesign(form) {
+  return {
+    source: form.elements.scriptSource.value,
+    sharedScript: form.elements.sharedScript.value || null,
+    plugins: checkedValues(form.querySelector('.plugin-list')),
+    ids: form.elements.runOn.value === 'remote' ? checkedValues(form.querySelector('.generator-list')) : [],
+    localCount: form.elements.generators.value || 1
+  };
+}
+
+async function loadInfrastructure() {
+  const [shared, generators] = await Promise.all([
+    api('/api/shared').catch(() => ({ scripts: [], plugins: [] })),
+    api('/api/load-generators').catch(() => ({ enabled: false, generators: [] }))
+  ]);
+  state.shared = shared;
+  state.loadGenerators = generators;
+  for (const form of [$('#create-form'), $('#update-form')]) {
+    const design = currentDesign(form);
+    renderSourceFields(form, design);
+    renderGeneratorFields(form, design);
+  }
+  renderGeneratorTable();
+  renderScenarios();
+}
+
+function renderGeneratorTable() {
+  const { enabled, generators } = state.loadGenerators;
+  $('#generator-table').innerHTML = !enabled
+    ? '<p class="muted">Remote load generators are off. Set <code>PERF_AGENT_TOKEN</code> on the controller to enable them.</p>'
+    : generators.length
+      ? `<table class="results-table"><thead><tr><th>Name</th><th>Status</th><th>Host</th><th>JMeter</th><th>Max users</th><th>Last seen</th><th></th></tr></thead><tbody>${generators
+          .map(
+            (generator) => `<tr>
+          <td><strong>${escapeHtml(generator.name)}</strong><br><span class="muted">agent ${escapeHtml(generator.agent_version || '?')}</span></td>
+          <td><span class="status ${STATUS_CLASS[generator.status] || ''}">${escapeHtml(generator.status)}</span>${
+            generator.active_run ? `<br><span class="muted">run ${escapeHtml(generator.active_run)}</span>` : ''
+          }</td>
+          <td>${escapeHtml(generator.hostname || '—')}</td>
+          <td>${escapeHtml(generator.jmeter_version || '—')}</td>
+          <td>${generator.max_threads ?? '—'}</td>
+          <td>${new Date(generator.last_seen_at).toLocaleString()}</td>
+          <td class="row-actions">
+            <button class="quiet" type="button" data-toggle-generator="${escapeHtml(generator.id)}" data-enabled="${generator.enabled}">${generator.enabled ? 'Disable' : 'Enable'}</button>
+            <button class="quiet" type="button" data-remove-generator="${escapeHtml(generator.id)}">Remove</button>
+          </td></tr>`
+          )
+          .join('')}</tbody></table>`
+      : '<p class="muted">No load generators have registered yet. Start the agent on a load generator machine (see docs/LOAD-GENERATORS.md).</p>';
+  const { scripts, plugins } = state.shared;
+  $('#shared-summary').innerHTML =
+    `${scripts.length} script${scripts.length === 1 ? '' : 's'} and ${plugins.length} plugin${
+      plugins.length === 1 ? '' : 's'
+    } available.${
+      scripts.length
+        ? `<ul class="plain-list">${scripts.map((script) => `<li>${escapeHtml(script.path)}${script.dataFiles.length ? ` <span class="muted">+ ${escapeHtml(script.dataFiles.join(', '))}</span>` : ''}</li>`).join('')}</ul>`
+        : ' Put each test in its own folder under <code>scripts/</code> on the shared drive, with its data files next to it, and plugin jars in <code>plugins/</code>.'
+    }`;
+}
+
+async function updateGenerator(button) {
+  if (button.dataset.toggleGenerator) {
+    await api(`/api/load-generators/${encodeURIComponent(button.dataset.toggleGenerator)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: button.dataset.enabled !== 'true' })
+    });
+  } else if (button.dataset.removeGenerator) {
+    const result = await api(`/api/load-generators/${encodeURIComponent(button.dataset.removeGenerator)}`, {
+      method: 'DELETE'
+    });
+    notify(
+      result.deleted ? 'Load generator removed.' : 'It has run history, so it was disabled instead of removed.',
+      true
+    );
+  }
+  await loadInfrastructure();
+}
+
 function renderScenarios() {
   $('#scenario-list').innerHTML = state.scenarios.length
     ? state.scenarios
@@ -172,7 +403,7 @@ function renderScenarios() {
           (scenario) => `
     <article class="scenario-card">
       <div class="card-title">${escapeHtml(scenario.name)}<span class="status">${scenario.has_script ? 'Script ready' : 'Needs script'}</span></div>
-      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>${escapeHtml(sloText(scenario.slo))}</div>
+      <div class="card-meta">${sourceText(scenario)} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${placeText(scenario)}<br>${escapeHtml(sloText(scenario.slo))}</div>
       <div class="card-actions">
         <button class="quiet" data-edit="${escapeHtml(scenario.id)}">Update</button>
         <button class="secondary" data-run="${escapeHtml(scenario.id)}" ${scenario.has_script ? '' : 'disabled'}>Execute</button>
@@ -198,8 +429,16 @@ function setForm(form, scenario) {
   form.elements.users.value = scenario.users;
   form.elements.duration.value = scenario.duration_seconds;
   form.elements.rampup.value = scenario.rampup_seconds;
-  form.elements.generators.value = scenario.generators ?? 1;
   setSloFields(form, scenario.slo);
+  renderSourceFields(form, {
+    source: scenario.script_source || 'upload',
+    sharedScript: scenario.shared_script,
+    plugins: scenario.plugins || []
+  });
+  renderGeneratorFields(form, {
+    ids: scenario.load_generator_ids || [],
+    localCount: (scenario.load_generator_ids || []).length ? 1 : (scenario.generators ?? 1)
+  });
 }
 
 function selectedUpdateScenario() {
@@ -210,8 +449,12 @@ async function loadScriptPreview(scenario) {
   $('#script-preview').textContent = 'Loading script…';
   try {
     $('#script-preview').textContent = await api(`/api/scenarios/${encodeURIComponent(scenario.id)}/script`);
-    $('#script-title').textContent = scenario.original_filename || scenario.script_name;
-    $('#script-status').textContent = `Stored JMX · version ${scenario.script_version}`;
+    $('#script-title').textContent =
+      scenario.script_source === 'shared' ? scenario.shared_script : scenario.original_filename || scenario.script_name;
+    $('#script-status').textContent =
+      scenario.script_source === 'shared'
+        ? 'Shared drive · current file'
+        : `Stored JMX · version ${scenario.script_version}`;
   } catch {
     $('#script-preview').textContent = 'No JMX uploaded for this scenario yet.';
     $('#script-title').textContent = scenario.script_name;
@@ -240,10 +483,18 @@ function renderExecuteDetails() {
   $('#execute-details').innerHTML = scenario
     ? `
     <strong>${escapeHtml(scenario.name)}</strong><br>
-    Script: ${escapeHtml(scenario.original_filename || scenario.script_name)}${scenario.has_script ? ` · version ${scenario.script_version}` : ''}<br>
-    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>
+    Script: ${sourceText(scenario)}<br>
+    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${placeText(scenario)}<br>
     ${escapeHtml(sloText(scenario.slo))}
     ${scenario.has_script ? '' : '<br><span class="status failed">Upload a script before running</span>'}
+    ${(scenario.load_generator_ids || [])
+      .map((id) => state.loadGenerators.generators.find((generator) => generator.id === id))
+      .filter((generator) => generator && generator.status !== 'online')
+      .map(
+        (generator) =>
+          `<br><span class="status failed">${escapeHtml(generator.name)} is ${escapeHtml(generator.status)}</span>`
+      )
+      .join('')}
   `
     : 'Select a scenario to review its configuration.';
 }
@@ -262,11 +513,12 @@ async function saveCreateScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
-      generators: form.get('generators'),
+      ...designFromForm(createForm),
       slo: sloFromForm(createForm)
     })
   });
-  if (scriptFile) {
+  const useUpload = createForm.elements.scriptSource.value === 'upload';
+  if (scriptFile && useUpload) {
     const scriptForm = new FormData();
     scriptForm.append('script', scriptFile);
     try {
@@ -282,13 +534,17 @@ async function saveCreateScenario(event) {
   }
   createForm.reset();
   $('#create-script-file').value = '';
+  renderSourceFields(createForm);
+  renderGeneratorFields(createForm);
   await loadScenarios();
   $('#update-select').value = created.id;
   selectUpdateScenario(created.id);
   notify(
-    scriptFile
-      ? 'Scenario created and JMX script uploaded.'
-      : 'Scenario created. Upload its JMX script in Update Scenario.',
+    !useUpload
+      ? 'Scenario created from the shared drive.'
+      : scriptFile
+        ? 'Scenario created and JMX script uploaded.'
+        : 'Scenario created. Upload its JMX script in Update Scenario.',
     true
   );
 }
@@ -307,7 +563,7 @@ async function saveUpdatedScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
-      generators: form.get('generators'),
+      ...designFromForm(event.currentTarget),
       slo: sloFromForm(event.currentTarget)
     })
   });
@@ -436,12 +692,25 @@ function renderRunDetails(run) {
   runDetails.innerHTML = `
     <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span></div>
     <div class="card-meta">Run ID: <strong>${escapeHtml(run.run_id)}</strong><br>
-      Script: ${escapeHtml(run.script_name || 'unknown')} · version ${run.script_version ?? 'unknown'} · SHA-256: ${escapeHtml((run.script_sha256 || '').slice(0, 16))}…<br>
+      Script: ${escapeHtml(run.script_name || 'unknown')} · ${run.script_source === 'shared' ? 'shared drive' : `version ${run.script_version ?? 'unknown'}`} · SHA-256: ${escapeHtml((run.script_sha256 || '').slice(0, 16))}…<br>
       Test start time: ${isActive && run.status === 'starting' ? 'Waiting for JMeter to start' : new Date(run.started_at).toLocaleString()} · Ended: ${escapeHtml(ended)}<br>
       Time remaining: <strong id="time-left" data-status="${escapeHtml(run.status)}" data-started-at="${escapeHtml(run.started_at)}" data-duration="${escapeHtml(run.duration_seconds)}"></strong><br>
       Configured load: ${run.users} users · ${run.duration_seconds}s · ${run.rampup_seconds}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${run.generators} load generators` : ''}
       ${run.error ? `<br><span class="status failed">${escapeHtml(run.error)}</span>` : ''}
     </div>
+    ${
+      run.loadGenerators?.length
+        ? `<table class="results-table generator-runs"><thead><tr><th>Load generator</th><th>Users</th><th>Status</th><th>Results received</th></tr></thead><tbody>${run.loadGenerators
+            .map(
+              (assignment) => `<tr><td>${escapeHtml(assignment.load_generator_name)}</td><td>${assignment.threads}</td>
+            <td><span class="status ${assignment.status === 'finished' ? (assignment.exit_code === 0 ? 'completed' : 'failed') : assignment.status === 'lost' ? 'failed' : 'running'}">${escapeHtml(
+              assignment.status === 'finished' ? `exit ${assignment.exit_code}` : assignment.status
+            )}</span>${assignment.error ? `<br><span class="muted">${escapeHtml(assignment.error)}</span>` : ''}</td>
+            <td>${(Number(assignment.jtl_bytes) / 1024).toFixed(1)} KB</td></tr>`
+            )
+            .join('')}</tbody></table>`
+        : ''
+    }
     <div class="runtime-actions">
       ${isActive ? `<button class="danger" type="button" data-abort="${escapeHtml(run.run_id)}">Abort test</button>` : ''}
       ${!isActive && run.summary ? `<button class="secondary" type="button" data-analyze="${escapeHtml(run.run_id)}">Analyze summary</button>` : ''}
@@ -746,5 +1015,22 @@ $('#run-list').addEventListener('click', (event) => {
   showView('runtime', monitor.dataset.monitor);
 });
 
-loadScenarios().catch((error) => notify(error.message));
+for (const form of [$('#create-form'), $('#update-form')]) {
+  form.addEventListener('change', (event) => {
+    if (['scriptSource', 'sharedScript'].includes(event.target.name)) updateSourceVisibility(form);
+    if (event.target.name === 'runOn') updateGeneratorVisibility(form);
+  });
+  form
+    .querySelector('.refresh-generators')
+    .addEventListener('click', () => loadInfrastructure().catch((error) => notify(error.message)));
+}
+$('#refresh-generators').addEventListener('click', () => loadInfrastructure().catch((error) => notify(error.message)));
+$('#generator-table').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-toggle-generator], [data-remove-generator]');
+  if (button) updateGenerator(button).catch((error) => notify(error.message));
+});
+
+loadInfrastructure()
+  .catch((error) => notify(error.message))
+  .finally(() => loadScenarios().catch((error) => notify(error.message)));
 loadRuns().catch((error) => notify(error.message));

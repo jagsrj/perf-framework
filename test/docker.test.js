@@ -74,3 +74,20 @@ test('runs JMeter as the host user on Linux and as the image user elsewhere', as
   // Docker options must come before the image name.
   assert.ok(args.indexOf('--user') < args.indexOf('perf-framework-jmeter:5.6.3'));
 });
+
+test('points JMeter at the bundled plugin folder', async () => {
+  const { jmeterRunArgs } = await import('../cli/docker.js');
+  const args = jmeterRunArgs({
+    runId: 'r',
+    jmxPath: '/results/r/bundle/test-influx.jmx',
+    resultsDir: '/results/r',
+    threads: 2,
+    generator: 1,
+    pluginDir: '/results/r/bundle/plugins',
+    env: {},
+    user: null
+  });
+  assert.ok(args.includes('/results/r/bundle:/scripts:ro'));
+  assert.ok(args.includes('-Jsearch_paths=/scripts/plugins'));
+  assert.ok(args.includes('-Juser.classpath=/scripts/plugins'));
+});

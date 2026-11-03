@@ -637,3 +637,83 @@ footer {
 .card-title .status + .status {
   margin-left: 6px;
 }
+
+.source-fields,
+.generator-fields {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px 14px;
+  margin: 14px 0;
+}
+.source-fields legend,
+.generator-fields legend {
+  font-weight: 650;
+  padding: 0 6px;
+}
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-bottom: 10px;
+}
+.check-list {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0;
+}
+.check-list .checkbox {
+  margin: 0;
+}
+.generator-option .status {
+  margin: 0 6px;
+}
+.field-label {
+  margin: 10px 0 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.live-abort {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 260px);
+  gap: 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+.row-actions {
+  white-space: nowrap;
+}
+.plain-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.generator-runs {
+  margin: 12px 0;
+}
+@media (max-width: 720px) {
+  .live-abort {
+    grid-template-columns: 1fr;
+  }
+}
+
+.source-fields .checkbox,
+.generator-fields .checkbox {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0;
+  font-weight: 400;
+}
+.source-fields .checkbox input,
+.generator-fields .checkbox input,
+.slo-fields .checkbox input {
+  width: auto;
+  margin: 0;
+}
+.live-abort .checkbox {
+  margin-bottom: 16px;
+}
+
+#view-generators .form-card {
+  max-width: none;
+}

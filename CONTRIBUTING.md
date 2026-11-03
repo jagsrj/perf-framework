@@ -11,7 +11,7 @@
 
    Tests use Node's built-in runner (`node --test`) and need no running services. The MCP end-to-end test starts fake HTTP servers.
 
-   The API tests in `test/api.test.js` also need a throwaway PostgreSQL database (they drop and recreate its schema). With the Compose stack running:
+   The API tests in `test/api.test.js` and the load generator tests in `test/agents.test.js` (real agents with `test/fixtures/fake-jmeter.mjs` standing in for JMeter) also need a throwaway PostgreSQL database (they drop and recreate its schema). With the Compose stack running:
 
    ```bash
    docker compose -f infra/docker-compose.yml exec postgres createdb -U perf_framework perf_framework_test

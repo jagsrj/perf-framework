@@ -5,6 +5,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ## [Unreleased]
 
 ### Added
+- **Remote load generators**: an agent (`agent/`, with a Docker image and `infra/load-generator-compose.yml`) runs on each load generator machine, registers with the controller and makes outbound calls only. Scenarios select which generators to run on; users are split across them, JTL results stream back during the run and are merged. Abort, lost-generator detection and restart recovery included. See `docs/LOAD-GENERATORS.md`.
+- **Shared drive** (`PERF_SHARED_DIR`) for scripts with their data files and for JMeter plugins. Scenarios can use a shared-drive script and selected plugins; they are snapshotted into a run bundle and sent to every generator (local containers mount it).
+- **Live SLO aborts** (`slo.abortOnFail`, `slo.abortDelaySeconds`): exact running checks across all generators; the run is aborted after two consecutive breaches and the CI gate exits `1`.
+- **Load generators** tab in the UI.
 - **Load generators**: a scenario's users can be split across several JMeter containers (`generators`, up to `PERF_MAX_GENERATORS`). Results from all generators are merged into one summary and SLO verdict; if one generator fails, the others are stopped. Available in the UI, API and MCP tools.
 - **API key authentication** (`PERF_API_KEY`) and remote access (`WEB_HOST`, `PERF_ALLOWED_HOSTS`). The server refuses to listen beyond localhost without a key. The CI gate, MCP server and browser UI send the key; the perf-gate example has a GitHub-hosted-runner job.
 - **Versioned database migrations** (`web/migrations/`, `npm run migrate`); existing databases are adopted automatically.
