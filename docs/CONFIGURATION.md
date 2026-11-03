@@ -15,6 +15,9 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `JMETER_DOCKER_NETWORK` | `infra_jmeter-network` | Docker network shared with InfluxDB |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local AI analysis endpoint |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Ollama model name |
+| `NOTIFY_WEBHOOK_URL` | (off) | Post a message when a run finishes ([CI.md](./CI.md#notifications)) |
+| `NOTIFY_WEBHOOK_FORMAT` | `slack` | `slack`, `teams` (Workflows Adaptive Card) or `json` |
+| `APP_BASE_URL` | `http://localhost:<WEB_PORT>` | Base URL used for report links in notifications |
 
 ## Docker Compose (`infra/docker-compose.yml`)
 
@@ -39,6 +42,8 @@ Published ports, all bound to `127.0.0.1`: Grafana `3000`, PostgreSQL `5433`, In
 
 See [MCP.md](./MCP.md) for details.
 
-## CLI (`node cli/index.js run`)
+## CLI
 
-The CLI takes its settings as flags (`--script`, `--name`, `--threads`, `--duration`, `--rampup`) and uses `JMETER_IMAGE` and `JMETER_DOCKER_NETWORK` for Docker.
+`node cli/index.js run` takes its settings as flags (`--script`, `--name`, `--threads`, `--duration`, `--rampup`) and uses `JMETER_IMAGE` and `JMETER_DOCKER_NETWORK` for Docker.
+
+`node cli/index.js ci` uses `PERF_WEB_URL` (default `http://localhost:4000`) unless you pass `--url`. Its options are listed in [CI.md](./CI.md#the-ci-gate).
