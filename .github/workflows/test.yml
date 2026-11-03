@@ -61,6 +61,16 @@ jobs:
         run: |
           test "$(docker run --rm --entrypoint id perf-framework-jmeter:ci -u)" != "0"
           docker run --rm perf-framework-jmeter:ci --version
+      - name: Build the load generator agent image
+        run: docker build --build-arg JMETER_IMAGE=perf-framework-jmeter:ci -t perf-framework-agent:ci agent
+      - name: Agent image has Node and JMeter, and refuses to start without settings
+        run: |
+          docker run --rm --entrypoint node perf-framework-agent:ci --version
+          docker run --rm --entrypoint jmeter perf-framework-agent:ci --version
+          ! docker run --rm perf-framework-agent:ci 2>&1 | tee /dev/stderr | grep -q "Registered"
+          docker run --rm perf-framework-agent:ci 2>&1 | grep -q "PERF_CONTROLLER_URL"
+      - name: Load generator Compose file is valid
+        run: PERF_CONTROLLER_URL=https://x PERF_AGENT_TOKEN=x docker compose -f infra/load-generator-compose.yml config --quiet
       - name: Compose file is valid and every image tag exists
         working-directory: infra
         run: |

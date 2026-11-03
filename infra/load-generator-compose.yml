@@ -1,0 +1,32 @@
+# Run this on each load generator machine (not on the controller):
+#
+#   export PERF_CONTROLLER_URL=https://perf.example.com   # how this machine reaches the controller
+#   export PERF_AGENT_TOKEN=...                           # the controller's PERF_AGENT_TOKEN
+#   export PERF_AGENT_NAME=lg-toronto-01                  # name shown in the UI
+#   docker compose -f infra/load-generator-compose.yml up -d
+#
+# Build the images on the machine first (or push them to your registry):
+#   docker build -t perf-framework-jmeter:5.6.3 ./jmeter
+#   docker build -t perf-framework-agent:1.0.0 ./agent
+services:
+  agent:
+    image: ${PERF_AGENT_IMAGE:-perf-framework-agent:1.0.0}
+    restart: unless-stopped
+    environment:
+      PERF_CONTROLLER_URL: ${PERF_CONTROLLER_URL:?Set PERF_CONTROLLER_URL}
+      PERF_AGENT_TOKEN: ${PERF_AGENT_TOKEN:?Set PERF_AGENT_TOKEN}
+      PERF_AGENT_NAME: ${PERF_AGENT_NAME:-}
+      PERF_AGENT_MAX_THREADS: ${PERF_AGENT_MAX_THREADS:-}
+      # JVM heap for JMeter; size it to the machine (for example -Xms4g -Xmx4g).
+      JVM_ARGS: ${JVM_ARGS:--Xms1g -Xmx1g}
+    volumes:
+      - agent_work:/home/jmeter/agent-work
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+volumes:
+  agent_work:
