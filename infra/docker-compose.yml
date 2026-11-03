@@ -9,6 +9,9 @@ services:
 
   influxdb:
     image: influxdb:1.8
+    ports:
+      # Localhost only: lets the MCP server read live metrics (get_live_metrics).
+      - "127.0.0.1:8086:8086"
     volumes:
       - influxdb_data:/var/lib/influxdb
     networks:
