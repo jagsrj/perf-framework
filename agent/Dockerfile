@@ -5,7 +5,7 @@
 #   docker build -t perf-framework-agent:1.0.0 ./agent
 ARG JMETER_IMAGE=perf-framework-jmeter:5.6.3
 
-FROM node:22-bookworm-slim AS agent
+FROM node:26-bookworm-slim AS agent
 WORKDIR /agent
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
