@@ -3,7 +3,7 @@
 //
 //   TEST_DATABASE_URL=postgres://perf_framework:local-dev-only@localhost:5433/perf_framework_test npm test
 //
-// WARNING: the tests drop and recreate the public schema of that database.
+// The tests use their own schema in that database and drop and recreate it.
 
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -14,7 +14,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../web/config.js';
 import { createApp } from '../web/create-app.js';
-import { createPool, migrate } from '../web/db.js';
+import { migrate } from '../web/db.js';
+import { createTestPool } from './helpers/db.js';
 import { createRunService } from '../web/run-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -126,8 +127,7 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
   }
 
   before(async () => {
-    pool = createPool(databaseUrl);
-    await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    pool = await createTestPool(databaseUrl, 'api_test');
     await migrate(pool);
   });
 

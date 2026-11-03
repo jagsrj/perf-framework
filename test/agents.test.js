@@ -1,7 +1,7 @@
 // End-to-end tests for remote load generators, the shared drive and live SLO aborts:
 // the real controller (Express + PostgreSQL) and real agents (agent/agent.js) talking over HTTP,
 // with test/fixtures/fake-jmeter.mjs standing in for JMeter.
-// Needs TEST_DATABASE_URL like test/api.test.js (it drops and recreates the schema).
+// Needs TEST_DATABASE_URL like test/api.test.js (it uses its own agents_test schema).
 
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -16,7 +16,8 @@ import { decideExit } from '../cli/ci.js';
 import { createAgentHub } from '../web/agent-hub.js';
 import { loadConfig } from '../web/config.js';
 import { createApp } from '../web/create-app.js';
-import { createPool, migrate } from '../web/db.js';
+import { migrate } from '../web/db.js';
+import { createTestPool } from './helpers/db.js';
 import { createRunService } from '../web/run-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -107,8 +108,7 @@ describe('load generators, shared drive and live SLO', { skip: databaseUrl ? fal
   }
 
   before(async () => {
-    pool = createPool(databaseUrl);
-    await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    pool = await createTestPool(databaseUrl, 'agents_test');
     await migrate(pool);
   });
 
