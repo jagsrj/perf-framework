@@ -26,7 +26,7 @@ const server = new McpServer(
 );
 
 registerTools(server, {
-  api: new PerfApiClient({ baseUrl: config.webBaseUrl, timeoutMs: config.requestTimeoutMs }),
+  api: new PerfApiClient({ baseUrl: config.webBaseUrl, apiKey: config.apiKey, timeoutMs: config.requestTimeoutMs }),
   influx: new InfluxClient({
     queryUrl: config.influxQueryUrl,
     database: config.influxDatabase,

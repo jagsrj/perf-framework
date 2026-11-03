@@ -21,6 +21,8 @@ export function loadConfig() {
     // The web app is the single source of truth: the MCP server never starts JMeter itself.
     webBaseUrl: (process.env.PERF_WEB_URL || `http://localhost:${process.env.WEB_PORT || 4000}`).replace(/\/$/, ''),
     // InfluxDB query endpoint for live metrics (Compose publishes it on 127.0.0.1:8086).
+    // Sent as a bearer token when the web app has PERF_API_KEY set.
+    apiKey: process.env.PERF_API_KEY || null,
     influxQueryUrl: process.env.INFLUXDB_QUERY_URL || 'http://localhost:8086/query',
     influxDatabase: process.env.INFLUXDB_DATABASE || 'jmeter',
     requestTimeoutMs: readInt('MCP_REQUEST_TIMEOUT_MS', 30_000),

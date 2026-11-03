@@ -8,6 +8,7 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 
 - Scenarios with versioned, validated JMX uploads (SHA-256 tracked)
 - One-click runs in Docker, with abort and crash recovery
+- Distributed load: split a scenario's users across several JMeter containers (load generators)
 - Live Grafana dashboard filtered by run ID
 - Exact p95/p99 summaries per transaction, computed from the JTL in bounded memory
 - Automatic like-for-like baseline comparison
@@ -16,6 +17,7 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 - Shareable HTML reports, scenario trend data, and Slack/Teams/webhook notifications
 - Optional local AI explanation via Ollama
 - MCP tools for AI-assisted testing, with load guardrails
+- Optional API key authentication for remote access and GitHub-hosted CI
 - Original CLI runner
 
 ## Requirements

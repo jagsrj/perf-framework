@@ -29,9 +29,8 @@ function recordSample(aggregate, row) {
 
   aggregate.responseTimeCount++;
   aggregate.responseTimeSum += responseTime;
-  aggregate.maxResponseMs = aggregate.maxResponseMs === null
-    ? responseTime
-    : Math.max(aggregate.maxResponseMs, responseTime);
+  aggregate.maxResponseMs =
+    aggregate.maxResponseMs === null ? responseTime : Math.max(aggregate.maxResponseMs, responseTime);
   if (responseTime === 0) {
     aggregate.zeroResponseTimes++;
     return;
@@ -55,9 +54,7 @@ function summarizeAggregate(aggregate) {
     samples: aggregate.samples,
     failures: aggregate.failures,
     errorRatePercent: aggregate.samples ? (aggregate.failures / aggregate.samples) * 100 : 0,
-    averageResponseMs: aggregate.responseTimeCount
-      ? aggregate.responseTimeSum / aggregate.responseTimeCount
-      : null,
+    averageResponseMs: aggregate.responseTimeCount ? aggregate.responseTimeSum / aggregate.responseTimeCount : null,
     p95ResponseMs: percentile(aggregate, 95),
     p99ResponseMs: percentile(aggregate, 99),
     maxResponseMs: aggregate.maxResponseMs
@@ -79,10 +76,9 @@ function createCollector() {
       return {
         ...total,
         successful: total.samples - total.failures,
-        transactions: Object.fromEntries([...transactions].map(([label, aggregate]) => [
-          label,
-          summarizeAggregate(aggregate)
-        ]))
+        transactions: Object.fromEntries(
+          [...transactions].map(([label, aggregate]) => [label, summarizeAggregate(aggregate)])
+        )
       };
     }
   };
@@ -96,8 +92,7 @@ export function summarizeJtl(csvText) {
   return collector.finish();
 }
 
-export async function summarizeJtlStream(readable) {
-  const collector = createCollector();
+async function consumeJtl(readable, collector) {
   const parser = parseStream({ columns: true, skip_empty_lines: true, bom: true });
   try {
     const consume = (async () => {
@@ -111,5 +106,16 @@ export async function summarizeJtlStream(readable) {
     parser.destroy();
     throw error;
   }
+}
+
+export async function summarizeJtlStream(readable) {
+  return summarizeJtlStreams([readable]);
+}
+
+// One combined summary for several JTL files, e.g. one per load generator. Percentiles are
+// computed over all samples together, not averaged per file.
+export async function summarizeJtlStreams(readables) {
+  const collector = createCollector();
+  for (const readable of readables) await consumeJtl(readable, collector);
   return collector.finish();
 }

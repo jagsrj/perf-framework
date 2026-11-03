@@ -5,12 +5,43 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [18, 20, 22]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: perf_framework_test
+          POSTGRES_USER: perf_framework
+          POSTGRES_PASSWORD: ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U perf_framework -d perf_framework_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://perf_framework:ci-only@localhost:5432/perf_framework_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,3 +50,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the JMeter image (verifies the pinned SHA-512)
+        run: docker build -t perf-framework-jmeter:ci jmeter
+      - name: JMeter runs as a non-root user
+        run: |
+          test "$(docker run --rm --entrypoint id perf-framework-jmeter:ci -u)" != "0"
+          docker run --rm perf-framework-jmeter:ci --version
+      - name: Compose file is valid and every image tag exists
+        working-directory: infra
+        run: |
+          docker compose config --quiet
+          for image in $(docker compose config --images | sort -u); do
+            echo "Checking $image"
+            docker manifest inspect "$image" > /dev/null
+          done

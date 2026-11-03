@@ -15,7 +15,7 @@ test('summarizes JTL totals and per-label latency distributions', async () => {
   const expected = {
     samples: 3,
     failures: 1,
-    errorRatePercent: 1 / 3 * 100,
+    errorRatePercent: (1 / 3) * 100,
     averageResponseMs: 20,
     p95ResponseMs: 30,
     p99ResponseMs: 30,
@@ -56,10 +56,7 @@ test('summarizes empty JTL data without inventing latency values', async () => {
 });
 
 test('surfaces source stream errors without an unhandled stream exception', async () => {
-  await assert.rejects(
-    summarizeJtlStream(createReadStream('/path/that/does/not/exist/results.jtl')),
-    /ENOENT/
-  );
+  await assert.rejects(summarizeJtlStream(createReadStream('/path/that/does/not/exist/results.jtl')), /ENOENT/);
 });
 
 test('percentiles never exceed the observed maximum', () => {

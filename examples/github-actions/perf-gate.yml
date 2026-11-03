@@ -1,7 +1,15 @@
 # Example performance gate. Copy to .github/workflows/perf-gate.yml in the repository you want to gate.
 #
-# Requirements: a self-hosted runner on the machine where perf-framework runs (Docker stack + `npm run web`),
-# because the web app only accepts localhost requests. Label the runner `perf`.
+# Pick one of the two jobs below and delete the other:
+#
+#   perf-self-hosted  Runs on a self-hosted runner (label `perf`) on the machine where perf-framework runs,
+#                     talking to http://localhost:4000. No API key needed.
+#                     Set the repository variable PERF_FRAMEWORK_DIR to your perf-framework clone on that machine.
+#
+#   perf-remote       Runs on a GitHub-hosted runner and calls a perf-framework web app exposed over HTTPS with
+#                     PERF_API_KEY set (see docs/CONFIGURATION.md#remote-access).
+#                     Set the repository variable PERF_WEB_URL (e.g. https://perf.example.com) and the
+#                     repository secret PERF_API_KEY.
 name: Performance gate
 
 on:
@@ -16,16 +24,22 @@ on:
   #   workflows: [Deploy to perf]
   #   types: [completed]
 
+permissions:
+  contents: read
+
+env:
+  SCENARIO: ${{ inputs.scenario || 'checkout-smoke' }}
+
 jobs:
-  perf:
+  perf-self-hosted:
     runs-on: [self-hosted, perf]
     timeout-minutes: 90
     steps:
       - name: Run scenario and enforce its SLO
-        working-directory: ${{ vars.PERF_FRAMEWORK_DIR }}   # path to your perf-framework clone on the runner
+        working-directory: ${{ vars.PERF_FRAMEWORK_DIR }}
         run: |
           node cli/index.js ci \
-            --scenario "${{ inputs.scenario || 'checkout-smoke' }}" \
+            --scenario "$SCENARIO" \
             --require-slo \
             --junit "$RUNNER_TEMP/perf-junit.xml" \
             --report "$RUNNER_TEMP/perf-report.html"
@@ -35,6 +49,41 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: perf-report
+          path: |
+            ${{ runner.temp }}/perf-report.html
+            ${{ runner.temp }}/perf-junit.xml
+
+  perf-remote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: jagsrj/perf-framework
+          path: perf-framework
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the CI gate
+        working-directory: perf-framework
+        run: npm ci --omit=dev
+      - name: Run scenario and enforce its SLO
+        working-directory: perf-framework
+        env:
+          PERF_WEB_URL: ${{ vars.PERF_WEB_URL }}
+          PERF_API_KEY: ${{ secrets.PERF_API_KEY }}
+        run: |
+          node cli/index.js ci \
+            --scenario "$SCENARIO" \
+            --require-slo \
+            --junit "$RUNNER_TEMP/perf-junit.xml" \
+            --report "$RUNNER_TEMP/perf-report.html"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report-remote
           path: |
             ${{ runner.temp }}/perf-report.html
             ${{ runner.temp }}/perf-junit.xml

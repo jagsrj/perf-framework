@@ -40,7 +40,9 @@ test('sends only supported numeric summary metrics to Ollama', async () => {
 test('returns a clear unavailable error when Ollama cannot be reached', async () => {
   await assert.rejects(
     analyzeWithOllama({ samples: 1 }, null, {
-      fetchImpl: async () => { throw new Error('connection refused'); }
+      fetchImpl: async () => {
+        throw new Error('connection refused');
+      }
     }),
     { statusCode: 503, message: 'Could not connect to Ollama. Check that the Docker service is running.' }
   );
@@ -62,11 +64,16 @@ test('reports a timeout when Ollama does not respond in time', async (t) => {
   await assert.rejects(
     analyzeWithOllama({ samples: 1 }, null, {
       timeoutMs: 1,
-      fetchImpl: (_url, { signal }) => new Promise((resolve, reject) => {
-        signal.addEventListener('abort', () => {
-          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
-        }, { once: true });
-      })
+      fetchImpl: (_url, { signal }) =>
+        new Promise((resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            },
+            { once: true }
+          );
+        })
     }),
     { statusCode: 504, message: 'Ollama did not respond before the 1-second timeout.' }
   );

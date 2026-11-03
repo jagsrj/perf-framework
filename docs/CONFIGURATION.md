@@ -6,18 +6,38 @@ Everything has a local-development default, so nothing needs to be set to get st
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WEB_PORT` | `4000` | UI/API port (bound to `127.0.0.1`) |
+| `WEB_PORT` | `4000` | UI/API port |
+| `WEB_HOST` | `127.0.0.1` | Interface to listen on. Anything other than loopback requires `PERF_API_KEY` |
+| `PERF_API_KEY` | (off) | Require this key on every API call except `GET /api/health`. At least 24 characters ([remote access](#remote-access)) |
+| `PERF_ALLOWED_HOSTS` | (none) | Comma-separated extra `Host` names to accept, e.g. `perf.example.com,10.0.0.5:4000` |
 | `POSTGRES_PASSWORD` | `local-dev-only` | Used to build the default database URL. Set the same value for Compose. |
 | `DATABASE_URL` | `postgres://perf_framework:<password>@localhost:5433/perf_framework` | Full PostgreSQL connection string |
 | `INFLUXDB_URL` | `http://influxdb:8086/write?db=jmeter` | Where JMeter (inside Docker) writes live metrics |
 | `GRAFANA_BASE_URL` | `http://localhost:3000` | Base for dashboard links |
+| `PERF_MAX_GENERATORS` | `10` | Most load generators (JMeter containers) one run may use |
 | `JMETER_IMAGE` | `perf-framework-jmeter:5.6.3` | JMeter Docker image |
+| `JMETER_DOCKER_USER` | Linux: the web app's `uid:gid`; elsewhere: the image's non-root `jmeter` user | `--user` for JMeter containers. Set `image` to never pass `--user` |
 | `JMETER_DOCKER_NETWORK` | `infra_jmeter-network` | Docker network shared with InfluxDB |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local AI analysis endpoint |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Ollama model name |
 | `NOTIFY_WEBHOOK_URL` | (off) | Post a message when a run finishes ([CI.md](./CI.md#notifications)) |
 | `NOTIFY_WEBHOOK_FORMAT` | `slack` | `slack`, `teams` (Workflows Adaptive Card) or `json` |
 | `APP_BASE_URL` | `http://localhost:<WEB_PORT>` | Base URL used for report links in notifications |
+
+## Remote access
+
+By default the web app only listens on `127.0.0.1` and has no authentication. To reach it from another machine (for example GitHub Actions on a hosted runner, through a reverse proxy or tunnel):
+
+```bash
+export PERF_API_KEY=$(openssl rand -hex 32)   # keep this secret
+export WEB_HOST=0.0.0.0
+export PERF_ALLOWED_HOSTS=perf.example.com     # the host name clients will use
+npm run web
+```
+
+Clients then send `Authorization: Bearer <key>` (or `X-API-Key: <key>`). The CI gate and the MCP server do this automatically when `PERF_API_KEY` is set in their environment, and the browser UI asks for the key once and remembers it in that browser. The server refuses to start on a non-loopback address without a key.
+
+Put HTTPS in front of it (a reverse proxy such as Caddy or nginx, or a tunnel such as Cloudflare Tunnel): the key is sent with every request, so plain HTTP across a network would expose it.
 
 ## Docker Compose (`infra/docker-compose.yml`)
 
@@ -33,6 +53,7 @@ Published ports, all bound to `127.0.0.1`: Grafana `3000`, PostgreSQL `5433`, In
 | Variable | Default | Purpose |
 |---|---|---|
 | `PERF_WEB_URL` | `http://localhost:<WEB_PORT>` | Web app the tools call |
+| `PERF_API_KEY` | (none) | Sent as a bearer token when the web app requires a key |
 | `INFLUXDB_QUERY_URL` | `http://localhost:8086/query` | InfluxDB query endpoint for live metrics |
 | `INFLUXDB_DATABASE` | `jmeter` | InfluxDB database |
 | `MCP_READ_ONLY` | `false` | Hide all tools that change something |
@@ -46,4 +67,4 @@ See [MCP.md](./MCP.md) for details.
 
 `node cli/index.js run` takes its settings as flags (`--script`, `--name`, `--threads`, `--duration`, `--rampup`) and uses `JMETER_IMAGE` and `JMETER_DOCKER_NETWORK` for Docker.
 
-`node cli/index.js ci` uses `PERF_WEB_URL` (default `http://localhost:4000`) unless you pass `--url`. Its options are listed in [CI.md](./CI.md#the-ci-gate).
+`node cli/index.js ci` uses `PERF_WEB_URL` (default `http://localhost:4000`) unless you pass `--url`, and sends `PERF_API_KEY` when it is set. Its options are listed in [CI.md](./CI.md#the-ci-gate).

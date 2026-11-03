@@ -30,11 +30,11 @@ For a beginner-friendly walkthrough of each technology, see [TECH-STACK-AND-BEGI
 1. A run request (UI or MCP) hits `POST /api/scenarios/:id/runs`. A partial unique index in PostgreSQL ensures that only one run is `starting` or `running` at a time.
 2. The current script is snapshotted to `results/<run-id>/script.jmx` and its SHA-256 is recorded.
 3. `prepareJMX` adds the run-ID tag and InfluxDB Backend Listener settings, producing the prepared plan.
-4. JMeter starts as a detached container labelled `perf-framework.run-id=<run-id>`. The web app stores the container ID and waits for it to exit.
-5. On exit, the JTL is summarised as a stream with bounded-memory HDR histograms (overall and per label). The summary is saved as JSONB. If the scenario had SLO targets when the run started (they are snapshotted into the run record), the pass/fail verdict is computed and saved as `slo_result`. An optional webhook notification is then sent.
-6. If the web app restarts mid-run, it finds the labelled container and resumes monitoring. **Abort** stops the container with a 10-second graceful shutdown.
+4. The scenario's users are split across its **load generators** as evenly as possible (10 users over 3 generators → 4, 3, 3). One detached JMeter container starts per generator, labelled `perf-framework.run-id=<run-id>` and `perf-framework.generator=<n>`, each writing `results-<n>.jtl` and `jmeter-<n>.log`. The web app stores the container IDs and waits for all of them to exit. If one generator fails, the others are stopped and the run is marked failed.
+5. When every generator has exited, their JTL files are summarised together (percentiles are computed over all samples, not averaged per generator) as a stream with bounded-memory HDR histograms (overall and per label). The summary is saved as JSONB. If the scenario had SLO targets when the run started (they are snapshotted into the run record), the pass/fail verdict is computed and saved as `slo_result`. An optional webhook notification is then sent.
+6. If the web app restarts mid-run, it finds the labelled containers and resumes monitoring. **Abort** stops every container with a 10-second graceful shutdown.
 
-The run ID is attached to metrics emitted by the InfluxDB Backend Listener and is used to filter the Grafana dashboard. Existing Backend Listeners in an uploaded JMX receive the run-ID tag when the plan is prepared.
+The run ID is attached to metrics emitted by the InfluxDB Backend Listener and is used to filter the Grafana dashboard. With several generators, each one reports its own series under the same run ID, so live counts and throughput add up correctly, while live percentiles are per generator; the final summary and SLO verdict use the merged JTL data. Existing Backend Listeners in an uploaded JMX receive the run-ID tag when the plan is prepared.
 
 ## Data lifecycle
 
@@ -54,4 +54,6 @@ A run's baseline is the latest earlier **completed** run with the same scenario,
 
 ## Limits and next steps
 
-This is a single-host runner, not a distributed platform: one active run, no scheduling, no high availability. For a multi-host deployment, move uploaded scripts and run artifacts to durable object storage and keep only their object keys and hashes in PostgreSQL. Add authentication, TLS, managed secrets and network policies before any shared deployment.
+Load generators currently all run on the Docker host the web app talks to, so they add JVMs and threads but share one machine's CPU, memory and network. There is one active run at a time, no scheduling and no high availability.
+
+The natural next step is generators on several hosts: run each generator through its own `DOCKER_HOST` (for example `ssh://` to other machines) or as a Kubernetes Job on AKS, copying the script in and the JTL out instead of using bind mounts. For a multi-host deployment, move uploaded scripts and run artifacts to durable object storage and keep only their object keys and hashes in PostgreSQL. API key authentication is available ([CONFIGURATION.md](./CONFIGURATION.md#remote-access)); add TLS, managed secrets and network policies before any shared deployment.

@@ -4,9 +4,18 @@
 import { compareSummaries } from './public/results.js';
 import { describeSlo } from './slo.js';
 
-const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-})[character]);
+const escapeHtml = (value) =>
+  String(value ?? '').replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[character]
+  );
 
 function format(value, suffix = '') {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
@@ -16,7 +25,7 @@ function format(value, suffix = '') {
 
 function changeCell(metric) {
   if (metric.delta === null) return '<td>—</td>';
-  const cls = metric.lowerIsBetter === null || metric.delta === 0 ? '' : (metric.delta < 0 ? 'better' : 'worse');
+  const cls = metric.lowerIsBetter === null || metric.delta === 0 ? '' : metric.delta < 0 ? 'better' : 'worse';
   const sign = metric.delta > 0 ? '+' : '';
   const pct = metric.percentChange === null ? '' : ` (${sign}${metric.percentChange.toFixed(1)}%)`;
   return `<td class="${cls}">${sign}${format(metric.delta, metric.suffix)}${pct}</td>`;
@@ -24,11 +33,16 @@ function changeCell(metric) {
 
 function verdictBlock(run) {
   if (!run.slo) return '<div class="verdict none">No SLO targets set for this scenario</div>';
-  if (!run.slo_result) return `<div class="verdict none">SLO not evaluated (run ${escapeHtml(run.status)})<br><small>${escapeHtml(describeSlo(run.slo))}</small></div>`;
+  if (!run.slo_result)
+    return `<div class="verdict none">SLO not evaluated (run ${escapeHtml(run.status)})<br><small>${escapeHtml(describeSlo(run.slo))}</small></div>`;
   const { passed, failed, checked, checks } = run.slo_result;
-  const rows = checks.map((check) => `<tr class="${check.passed ? '' : 'fail'}">
+  const rows = checks
+    .map(
+      (check) => `<tr class="${check.passed ? '' : 'fail'}">
       <td>${escapeHtml(check.scope)}</td><td>${escapeHtml(check.label || check.metric)}</td>
-      <td>${format(check.target)}</td><td>${format(check.actual)}</td><td>${check.passed ? 'PASS' : 'FAIL'}</td></tr>`).join('');
+      <td>${format(check.target)}</td><td>${format(check.actual)}</td><td>${check.passed ? 'PASS' : 'FAIL'}</td></tr>`
+    )
+    .join('');
   return `<div class="verdict ${passed ? 'pass' : 'fail'}">SLO ${passed ? 'PASSED' : `FAILED (${failed} of ${checked} checks)`}<br>
     <small>${escapeHtml(describeSlo(run.slo))}</small></div>
     <table><thead><tr><th>Scope</th><th>Metric</th><th>Target</th><th>Actual</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -37,7 +51,9 @@ function verdictBlock(run) {
 export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
   const summary = run.summary;
   const metrics = summary ? compareSummaries(summary, baseline?.summary) : [];
-  const transactions = Object.entries(summary?.transactions || {}).sort(([, a], [, b]) => (b.p95ResponseMs ?? 0) - (a.p95ResponseMs ?? 0));
+  const transactions = Object.entries(summary?.transactions || {}).sort(
+    ([, a], [, b]) => (b.p95ResponseMs ?? 0) - (a.p95ResponseMs ?? 0)
+  );
   const baselineTx = baseline?.summary?.transactions || {};
 
   return `<!doctype html>
@@ -70,7 +86,7 @@ export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
   <span><strong>Run ID</strong>${escapeHtml(run.run_id)}</span>
   <span><strong>Started</strong>${escapeHtml(new Date(run.started_at).toISOString())}</span>
   <span><strong>Ended</strong>${run.ended_at ? escapeHtml(new Date(run.ended_at).toISOString()) : '—'}</span>
-  <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
+  <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s · ${escapeHtml(run.rampup_seconds)}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${escapeHtml(run.generators)} load generators` : ''}</span>
   <span><strong>Script</strong>${escapeHtml(run.script_name || 'unknown')} · v${escapeHtml(run.script_version ?? '?')}</span>
   <span><strong>Script SHA-256</strong>${escapeHtml((run.script_sha256 || '').slice(0, 16))}…</span>
 </section>
@@ -79,20 +95,33 @@ export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
 ${verdictBlock(run)}
 
 <h2>Summary${baseline ? ` vs baseline ${escapeHtml(baseline.run_id)}` : ''}</h2>
-${summary ? `<table><thead><tr><th>Metric</th><th>This run</th><th>Baseline</th><th>Change</th></tr></thead><tbody>
+${
+  summary
+    ? `<table><thead><tr><th>Metric</th><th>This run</th><th>Baseline</th><th>Change</th></tr></thead><tbody>
 ${metrics.map((m) => `<tr><td>${escapeHtml(m.label)}</td><td>${format(m.value, m.suffix)}</td><td>${format(m.baselineValue, m.suffix)}</td>${changeCell(m)}</tr>`).join('\n')}
 </tbody></table>
-<p class="muted">${baseline ? `Baseline: latest earlier completed run with the same scenario, script and load (${escapeHtml(new Date(baseline.started_at).toISOString())}).` : 'No matching baseline run (same scenario, script and load) was found.'} Lower latency and error values are better.</p>` : '<p class="muted">No summary is available for this run.</p>'}
+<p class="muted">${baseline ? `Baseline: latest earlier completed run with the same scenario, script and load (${escapeHtml(new Date(baseline.started_at).toISOString())}).` : 'No matching baseline run (same scenario, script and load) was found.'} Lower latency and error values are better.</p>`
+    : '<p class="muted">No summary is available for this run.</p>'
+}
 
-${transactions.length ? `<h2>Transactions (slowest p95 first)</h2>
+${
+  transactions.length
+    ? `<h2>Transactions (slowest p95 first)</h2>
 <table><thead><tr><th>Transaction</th><th>Samples</th><th>Error rate</th><th>Mean</th><th>p95</th><th>p99</th><th>Max</th><th>p95 vs baseline</th></tr></thead><tbody>
-${transactions.map(([label, tx]) => {
+${transactions
+  .map(([label, tx]) => {
     const base = baselineTx[label]?.p95ResponseMs;
-    const pct = Number.isFinite(base) && base !== 0 && Number.isFinite(tx.p95ResponseMs) ? ((tx.p95ResponseMs - base) / base) * 100 : null;
-    const cls = pct === null || pct === 0 ? '' : (pct < 0 ? 'better' : 'worse');
+    const pct =
+      Number.isFinite(base) && base !== 0 && Number.isFinite(tx.p95ResponseMs)
+        ? ((tx.p95ResponseMs - base) / base) * 100
+        : null;
+    const cls = pct === null || pct === 0 ? '' : pct < 0 ? 'better' : 'worse';
     return `<tr><td>${escapeHtml(label)}</td><td>${format(tx.samples)}</td><td>${format(tx.errorRatePercent, '%')}</td><td>${format(tx.averageResponseMs, ' ms')}</td><td>${format(tx.p95ResponseMs, ' ms')}</td><td>${format(tx.p99ResponseMs, ' ms')}</td><td>${format(tx.maxResponseMs, ' ms')}</td><td class="${cls}">${pct === null ? '—' : `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`}</td></tr>`;
-  }).join('\n')}
-</tbody></table>` : ''}
+  })
+  .join('\n')}
+</tbody></table>`
+    : ''
+}
 
 <footer>Generated ${escapeHtml(generatedAt.toISOString())} by perf-framework. Percentiles are computed from the full JTL.</footer>
 </main></body></html>`;

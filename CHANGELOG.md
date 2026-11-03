@@ -5,6 +5,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ## [Unreleased]
 
 ### Added
+- **Load generators**: a scenario's users can be split across several JMeter containers (`generators`, up to `PERF_MAX_GENERATORS`). Results from all generators are merged into one summary and SLO verdict; if one generator fails, the others are stopped. Available in the UI, API and MCP tools.
+- **API key authentication** (`PERF_API_KEY`) and remote access (`WEB_HOST`, `PERF_ALLOWED_HOSTS`). The server refuses to listen beyond localhost without a key. The CI gate, MCP server and browser UI send the key; the perf-gate example has a GitHub-hosted-runner job.
+- **Versioned database migrations** (`web/migrations/`, `npm run migrate`); existing databases are adopted automatically.
+- **API tests** against a real PostgreSQL database (`TEST_DATABASE_URL`), run in CI with a Postgres service.
+- ESLint, Prettier (`npm run lint`, `npm run format`) and Dependabot.
 - **SLO targets per scenario** (p95, p99, mean, max, error rate; optionally per transaction). Targets are snapshotted at run start and every run gets an automatic pass/fail verdict (`slo_result`) shown in the UI, API, reports and notifications.
 - **CI gate**: `node cli/index.js ci` runs a scenario and exits `0` (pass), `1` (SLO failed) or `2` (run failed), with optional JUnit XML and HTML report output. Includes a GitHub Actions perf-gate example and a Jenkins snippet (`docs/CI.md`).
 - **HTML run report** (`/api/runs/:runId/report`, with view and download links on the Test results page).
@@ -18,6 +23,9 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Unit and end-to-end tests for the MCP layer.
 
 ### Changed
+- JMeter image: the download is checked against a pinned SHA-512, curl is removed after use, and JMeter runs as a non-root user (on Linux, as the web app's own user so results stay writable) with `no-new-privileges`. **Rebuild the image** (`docker build -t perf-framework-jmeter:5.6.3 ./jmeter`).
+- Compose images pinned: `ollama/ollama:0.40.6` (was `latest`) and `influxdb:1.11` (was 1.8; it reads existing 1.8 data in place). CI builds the JMeter image and checks every Compose image tag exists.
+- `web/server.js` split into `config`, `db`, `auth`, `run-service`, `routes/` and `create-app` modules. Unknown `/api/*` paths now return a JSON 404.
 - InfluxDB is published on `127.0.0.1:8086` so live metrics can be queried from the host.
 - README reorganised into a quick start with links to detailed docs. Data-lifecycle details moved to `docs/ARCHITECTURE.md`.
 - `package.json` description now reflects the local single-host design.

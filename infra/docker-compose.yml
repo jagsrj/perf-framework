@@ -1,17 +1,19 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    # Pinned so results do not change underneath you; Dependabot proposes upgrades.
+    image: ollama/ollama:0.40.6
     restart: unless-stopped
     ports:
-      - "127.0.0.1:11434:11434"
+      - '127.0.0.1:11434:11434'
     volumes:
       - ollama_data:/root/.ollama
 
   influxdb:
-    image: influxdb:1.8
+    # InfluxDB 1.x (InfluxQL). 1.11 reads data written by 1.8 in place.
+    image: influxdb:1.11
     ports:
       # Localhost only: lets the MCP server read live metrics (get_live_metrics).
-      - "127.0.0.1:8086:8086"
+      - '127.0.0.1:8086:8086'
     volumes:
       - influxdb_data:/var/lib/influxdb
     networks:
@@ -19,7 +21,7 @@ services:
     environment:
       INFLUXDB_DB: jmeter
     healthcheck:
-      test: ["CMD", "influx", "-execute", "SHOW DATABASES"]
+      test: ['CMD', 'influx', '-execute', 'SHOW DATABASES']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -32,12 +34,12 @@ services:
     networks:
       - jmeter-network
     ports:
-      - "127.0.0.1:3000:3000"
+      - '127.0.0.1:3000:3000'
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_SECURITY_ALLOW_EMBEDDING: 'true'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
 
   postgres:
@@ -48,28 +50,28 @@ services:
       POSTGRES_USER: perf_framework
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
     ports:
-      - "127.0.0.1:5433:5432"
+      - '127.0.0.1:5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U perf_framework -d perf_framework"]
+      test: ['CMD-SHELL', 'pg_isready -U perf_framework -d perf_framework']
       interval: 5s
       timeout: 3s
       retries: 20
 
   influxdb-retention:
-    image: influxdb:1.8
+    image: influxdb:1.11
     networks:
       - jmeter-network
     depends_on:
       influxdb:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ['/bin/sh', '-c']
     command:
       - >-
         influx -host influxdb -execute
         'ALTER RETENTION POLICY "autogen" ON "jmeter" DURATION 1d SHARD DURATION 1h DEFAULT'
-    restart: "no"
+    restart: 'no'
 
 networks:
   jmeter-network:

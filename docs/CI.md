@@ -63,7 +63,12 @@ FAIL: SLO failed (1 of 2 checks).
 
 ### GitHub Actions
 
-The web app accepts **localhost requests only**, so the job must run on a **self-hosted runner** on the machine where the framework runs. Copy [`examples/github-actions/perf-gate.yml`](../examples/github-actions/perf-gate.yml) into the repository you want to gate, give your runner the label `perf`, and set the repository variable `PERF_FRAMEWORK_DIR` to the path of your clone on that machine. The workflow uploads the HTML report and JUnit file as artifacts.
+There are two ways to connect GitHub Actions to the framework:
+
+- **Self-hosted runner (simplest):** run the job on the machine where the framework runs, so it can use `http://localhost:4000` with no key. Give the runner the label `perf` and set the repository variable `PERF_FRAMEWORK_DIR` to the path of your clone on that machine.
+- **GitHub-hosted runner:** expose the web app with `PERF_API_KEY` set ([remote access](./CONFIGURATION.md#remote-access)), then store the URL as the repository variable `PERF_WEB_URL` and the key as the secret `PERF_API_KEY`. The job checks out perf-framework, installs it and calls the remote API.
+
+Copy [`examples/github-actions/perf-gate.yml`](../examples/github-actions/perf-gate.yml) into the repository you want to gate; it contains both variants. The workflow uploads the HTML report and JUnit file as artifacts.
 
 ### Jenkins
 

@@ -10,9 +10,18 @@ export const EXIT = { PASS: 0, SLO_FAILED: 1, ERROR: 2 };
 const TERMINAL = new Set(['completed', 'failed', 'aborted']);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const escapeXml = (value) => String(value ?? '').replace(/[<>&"']/g, (c) => ({
-  '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;'
-})[c]);
+const escapeXml = (value) =>
+  String(value ?? '').replace(
+    /[<>&"']/g,
+    (c) =>
+      ({
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&apos;'
+      })[c]
+  );
 
 export function resolveScenario(scenarios, nameOrId) {
   const byId = scenarios.find((scenario) => scenario.id === nameOrId);
@@ -24,7 +33,8 @@ export function resolveScenario(scenarios, nameOrId) {
 }
 
 export function decideExit(run, { requireSlo = false } = {}) {
-  if (run.status !== 'completed') return { code: EXIT.ERROR, reason: `Run ${run.status}${run.error ? `: ${run.error}` : ''}` };
+  if (run.status !== 'completed')
+    return { code: EXIT.ERROR, reason: `Run ${run.status}${run.error ? `: ${run.error}` : ''}` };
   if (!run.slo_result) {
     return requireSlo
       ? { code: EXIT.SLO_FAILED, reason: 'No SLO targets are set for this scenario (--require-slo).' }
@@ -39,12 +49,20 @@ export function toJUnit(run, decision) {
   const name = `perf.${run.scenario_name}`;
   const seconds = run.ended_at ? (new Date(run.ended_at) - new Date(run.started_at)) / 1000 : 0;
   const cases = [];
-  cases.push(`    <testcase classname="${escapeXml(name)}" name="run status" time="${seconds}">${
-    run.status === 'completed' ? '' : `\n      <failure message="${escapeXml(decision.reason)}"/>\n    `}</testcase>`);
+  cases.push(
+    `    <testcase classname="${escapeXml(name)}" name="run status" time="${seconds}">${
+      run.status === 'completed' ? '' : `\n      <failure message="${escapeXml(decision.reason)}"/>\n    `
+    }</testcase>`
+  );
   for (const check of run.slo_result?.checks || []) {
     const label = `${check.scope} ${check.label || check.metric} <= ${check.target}`;
-    cases.push(`    <testcase classname="${escapeXml(name)}" name="${escapeXml(label)}">${check.passed ? ''
-      : `\n      <failure message="${escapeXml(`actual ${check.actual ?? 'no data'}, target <= ${check.target}`)}"/>\n    `}</testcase>`);
+    cases.push(
+      `    <testcase classname="${escapeXml(name)}" name="${escapeXml(label)}">${
+        check.passed
+          ? ''
+          : `\n      <failure message="${escapeXml(`actual ${check.actual ?? 'no data'}, target <= ${check.target}`)}"/>\n    `
+      }</testcase>`
+    );
   }
   const failures = cases.filter((c) => c.includes('<failure')).length;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -83,7 +101,9 @@ export async function runGate({
     const scenario = resolveScenario(await client.listScenarios(), nameOrId);
     if (!scenario.has_script) throw new Error(`Scenario "${scenario.name}" has no JMX script.`);
     const limitSeconds = timeoutSeconds ?? scenario.duration_seconds + 600;
-    log(`Starting "${scenario.name}": ${scenario.users} users, ${scenario.duration_seconds}s, ramp-up ${scenario.rampup_seconds}s`);
+    log(
+      `Starting "${scenario.name}": ${scenario.users} users, ${scenario.duration_seconds}s, ramp-up ${scenario.rampup_seconds}s`
+    );
     run = await client.startRun(scenario.id);
     log(`Run ID: ${run.run_id}`);
 
@@ -124,6 +144,6 @@ export async function runGate({
   return { ...decision, run };
 }
 
-export function createClient(url) {
-  return new PerfApiClient({ baseUrl: url.replace(/\/$/, ''), timeoutMs: 30_000 });
+export function createClient(url, apiKey = process.env.PERF_API_KEY || null) {
+  return new PerfApiClient({ baseUrl: url.replace(/\/$/, ''), apiKey, timeoutMs: 30_000 });
 }

@@ -10,9 +10,18 @@ const state = {
   remainingTimer: null
 };
 const $ = (selector) => document.querySelector(selector);
-const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-})[character]);
+const escapeHtml = (value) =>
+  String(value ?? '').replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[character]
+  );
 
 const SLO_KEYS = ['p95Ms', 'p99Ms', 'averageMs', 'maxMs', 'errorRatePercent'];
 const SLO_LABELS = { p95Ms: 'p95', p99Ms: 'p99', averageMs: 'mean', maxMs: 'max', errorRatePercent: 'errors' };
@@ -35,8 +44,9 @@ function setSloFields(form, slo) {
 
 function sloText(slo) {
   if (!slo) return 'No SLO targets';
-  const parts = SLO_KEYS.filter((key) => Number.isFinite(slo[key]))
-    .map((key) => `${SLO_LABELS[key]} ≤ ${slo[key]}${key === 'errorRatePercent' ? '%' : ' ms'}`);
+  const parts = SLO_KEYS.filter((key) => Number.isFinite(slo[key])).map(
+    (key) => `${SLO_LABELS[key]} ≤ ${slo[key]}${key === 'errorRatePercent' ? '%' : ' ms'}`
+  );
   return `SLO: ${parts.join(', ')}${slo.applyToTransactions ? ' (per transaction)' : ''}`;
 }
 
@@ -47,8 +57,77 @@ function sloBadge(run) {
     : `<span class="status failed">SLO fail (${run.slo_result.failed}/${run.slo_result.checked})</span>`;
 }
 
+// When the server has PERF_API_KEY set, the UI asks for the key once and keeps it in this browser.
+const API_KEY_STORAGE = 'perf-framework.apiKey';
+
+function storedApiKey() {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+let pendingKeyPrompt = null;
+
+// Several requests can be rejected at once (e.g. on page load); ask only once for all of them.
+function askForApiKey() {
+  pendingKeyPrompt ??= Promise.resolve().then(() => {
+    const entered = window.prompt('This perf-framework server needs an API key. Enter it to continue:')?.trim();
+    if (entered) {
+      try {
+        localStorage.setItem(API_KEY_STORAGE, entered);
+      } catch {
+        // storage unavailable: the key is used for the retried requests only
+      }
+    }
+    setTimeout(() => {
+      pendingKeyPrompt = null;
+    }, 0);
+    return entered || null;
+  });
+  return pendingKeyPrompt;
+}
+
+async function authorizedFetch(url, options = {}, keyOverride = null, askIfRejected = true) {
+  const headers = new Headers(options.headers || {});
+  const key = keyOverride || storedApiKey();
+  if (key) headers.set('authorization', `Bearer ${key}`);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 && askIfRejected) {
+    const entered = await askForApiKey();
+    if (entered) return authorizedFetch(url, options, entered, false);
+  }
+  return response;
+}
+
+async function openReport(runId, download) {
+  // Open the tab straight away so the browser does not treat it as an unrequested pop-up.
+  const tab = download ? null : window.open('', '_blank');
+  try {
+    const response = await authorizedFetch(
+      `/api/runs/${encodeURIComponent(runId)}/report${download ? '?download' : ''}`
+    );
+    if (!response.ok) throw new Error(`Could not load the report (${response.status}).`);
+    const url = URL.createObjectURL(new Blob([await response.text()], { type: 'text/html' }));
+    if (download) {
+      const filename = /filename="?([^"]+)"?/.exec(response.headers.get('content-disposition') || '')?.[1];
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `perf-report-${runId}.html`;
+      link.click();
+    } else {
+      tab.location = url;
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    tab?.close();
+    notify(error.message);
+  }
+}
+
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await authorizedFetch(url, options);
   const contentType = response.headers.get('content-type') || '';
   const body = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) throw new Error(body?.error || body || `Request failed (${response.status})`);
@@ -61,12 +140,16 @@ function notify(message, success = false) {
   notice.classList.toggle('success', success);
   notice.hidden = false;
   window.clearTimeout(notify.timer);
-  notify.timer = window.setTimeout(() => { notice.hidden = true; }, 6000);
+  notify.timer = window.setTimeout(() => {
+    notice.hidden = true;
+  }, 6000);
 }
 
 function showView(name, preferredRunId = null) {
   document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.view === name));
-  document.querySelectorAll('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
+  document.querySelectorAll('.view').forEach((view) => {
+    view.hidden = view.id !== `view-${name}`;
+  });
   if (name === 'runtime') showCurrentRun(preferredRunId).catch((error) => notify(error.message));
   if (name === 'execute') loadRuns();
   if (name === 'results') loadResults().catch((error) => notify(error.message));
@@ -74,22 +157,30 @@ function showView(name, preferredRunId = null) {
 
 function scenarioOptions(select, selectedId = '') {
   const previous = selectedId || select.value;
-  select.innerHTML = '<option value="">Choose a scenario</option>' + state.scenarios.map((scenario) =>
-    `<option value="${escapeHtml(scenario.id)}">${escapeHtml(scenario.name)}</option>`
-  ).join('');
+  select.innerHTML =
+    '<option value="">Choose a scenario</option>' +
+    state.scenarios
+      .map((scenario) => `<option value="${escapeHtml(scenario.id)}">${escapeHtml(scenario.name)}</option>`)
+      .join('');
   if (state.scenarios.some((scenario) => scenario.id === previous)) select.value = previous;
 }
 
 function renderScenarios() {
-  $('#scenario-list').innerHTML = state.scenarios.length ? state.scenarios.map((scenario) => `
+  $('#scenario-list').innerHTML = state.scenarios.length
+    ? state.scenarios
+        .map(
+          (scenario) => `
     <article class="scenario-card">
       <div class="card-title">${escapeHtml(scenario.name)}<span class="status">${scenario.has_script ? 'Script ready' : 'Needs script'}</span></div>
-      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>${escapeHtml(sloText(scenario.slo))}</div>
+      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>${escapeHtml(sloText(scenario.slo))}</div>
       <div class="card-actions">
         <button class="quiet" data-edit="${escapeHtml(scenario.id)}">Update</button>
         <button class="secondary" data-run="${escapeHtml(scenario.id)}" ${scenario.has_script ? '' : 'disabled'}>Execute</button>
       </div>
-    </article>`).join('') : '<p class="muted">No scenarios yet. Create one above.</p>';
+    </article>`
+        )
+        .join('')
+    : '<p class="muted">No scenarios yet. Create one above.</p>';
   scenarioOptions($('#update-select'));
   scenarioOptions($('#execute-select'));
 }
@@ -107,6 +198,7 @@ function setForm(form, scenario) {
   form.elements.users.value = scenario.users;
   form.elements.duration.value = scenario.duration_seconds;
   form.elements.rampup.value = scenario.rampup_seconds;
+  form.elements.generators.value = scenario.generators ?? 1;
   setSloFields(form, scenario.slo);
 }
 
@@ -120,7 +212,7 @@ async function loadScriptPreview(scenario) {
     $('#script-preview').textContent = await api(`/api/scenarios/${encodeURIComponent(scenario.id)}/script`);
     $('#script-title').textContent = scenario.original_filename || scenario.script_name;
     $('#script-status').textContent = `Stored JMX · version ${scenario.script_version}`;
-  } catch (error) {
+  } catch {
     $('#script-preview').textContent = 'No JMX uploaded for this scenario yet.';
     $('#script-title').textContent = scenario.script_name;
     $('#script-status').textContent = 'Upload required';
@@ -145,13 +237,15 @@ function selectUpdateScenario(id) {
 function renderExecuteDetails() {
   const scenario = state.scenarios.find((item) => item.id === $('#execute-select').value);
   $('#execute-run').disabled = !scenario?.has_script;
-  $('#execute-details').innerHTML = scenario ? `
+  $('#execute-details').innerHTML = scenario
+    ? `
     <strong>${escapeHtml(scenario.name)}</strong><br>
     Script: ${escapeHtml(scenario.original_filename || scenario.script_name)}${scenario.has_script ? ` · version ${scenario.script_version}` : ''}<br>
-    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>
+    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>
     ${escapeHtml(sloText(scenario.slo))}
     ${scenario.has_script ? '' : '<br><span class="status failed">Upload a script before running</span>'}
-  ` : 'Select a scenario to review its configuration.';
+  `
+    : 'Select a scenario to review its configuration.';
 }
 
 async function saveCreateScenario(event) {
@@ -168,6 +262,7 @@ async function saveCreateScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
+      generators: form.get('generators'),
       slo: sloFromForm(createForm)
     })
   });
@@ -191,7 +286,9 @@ async function saveCreateScenario(event) {
   $('#update-select').value = created.id;
   selectUpdateScenario(created.id);
   notify(
-    scriptFile ? 'Scenario created and JMX script uploaded.' : 'Scenario created. Upload its JMX script in Update Scenario.',
+    scriptFile
+      ? 'Scenario created and JMX script uploaded.'
+      : 'Scenario created. Upload its JMX script in Update Scenario.',
     true
   );
 }
@@ -210,6 +307,7 @@ async function saveUpdatedScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
+      generators: form.get('generators'),
       slo: sloFromForm(event.currentTarget)
     })
   });
@@ -238,12 +336,16 @@ function renderRuns() {
   if (!state.runs.length) {
     list.innerHTML = '<p class="muted">No runs have been started yet.</p>';
   } else {
-    list.innerHTML = state.runs.map((run) => `
+    list.innerHTML = state.runs
+      .map(
+        (run) => `
       <article class="run-card">
         <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>${sloBadge(run)}</div>
         <div class="card-meta">Run ${escapeHtml(run.run_id)}<br>${new Date(run.started_at).toLocaleString()} · ${run.users} users · ${run.duration_seconds}s</div>
         <div class="card-actions"><button class="secondary" data-monitor="${escapeHtml(run.run_id)}">Monitor run</button></div>
-      </article>`).join('');
+      </article>`
+      )
+      .join('');
   }
   const selector = $('#runtime-select');
   if (!state.runs.some((run) => run.run_id === state.currentRunId)) {
@@ -251,14 +353,24 @@ function renderRuns() {
     state.currentRunId = activeRun?.run_id || state.runs[0]?.run_id || null;
   }
   const current = state.currentRunId || selector.value;
-  selector.innerHTML = '<option value="">Choose a run</option>' + state.runs.map((run) =>
-    `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${escapeHtml(run.run_id)} · ${escapeHtml(run.status)}</option>`
-  ).join('');
+  selector.innerHTML =
+    '<option value="">Choose a run</option>' +
+    state.runs
+      .map(
+        (run) =>
+          `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${escapeHtml(run.run_id)} · ${escapeHtml(run.status)}</option>`
+      )
+      .join('');
   if (state.runs.some((run) => run.run_id === current)) selector.value = current;
   const resultsSelector = $('#results-select');
-  resultsSelector.innerHTML = '<option value="">Choose a run</option>' + state.runs.map((run) =>
-    `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${new Date(run.started_at).toLocaleString()} · ${escapeHtml(run.status)}</option>`
-  ).join('');
+  resultsSelector.innerHTML =
+    '<option value="">Choose a run</option>' +
+    state.runs
+      .map(
+        (run) =>
+          `<option value="${escapeHtml(run.run_id)}">${escapeHtml(run.scenario_name)} · ${new Date(run.started_at).toLocaleString()} · ${escapeHtml(run.status)}</option>`
+      )
+      .join('');
   if (state.runs.some((run) => run.run_id === state.selectedResultRunId)) {
     resultsSelector.value = state.selectedResultRunId;
   }
@@ -305,9 +417,10 @@ function updateTimeRemaining() {
     timeLeft.textContent = '—';
     return;
   }
-  const secondsLeft = Math.max(0, Math.ceil(
-    Number(timeLeft.dataset.duration) - (Date.now() - new Date(timeLeft.dataset.startedAt).getTime()) / 1000
-  ));
+  const secondsLeft = Math.max(
+    0,
+    Math.ceil(Number(timeLeft.dataset.duration) - (Date.now() - new Date(timeLeft.dataset.startedAt).getTime()) / 1000)
+  );
   const hours = Math.floor(secondsLeft / 3600);
   const minutes = Math.floor((secondsLeft % 3600) / 60);
   const seconds = secondsLeft % 60;
@@ -326,7 +439,7 @@ function renderRunDetails(run) {
       Script: ${escapeHtml(run.script_name || 'unknown')} · version ${run.script_version ?? 'unknown'} · SHA-256: ${escapeHtml((run.script_sha256 || '').slice(0, 16))}…<br>
       Test start time: ${isActive && run.status === 'starting' ? 'Waiting for JMeter to start' : new Date(run.started_at).toLocaleString()} · Ended: ${escapeHtml(ended)}<br>
       Time remaining: <strong id="time-left" data-status="${escapeHtml(run.status)}" data-started-at="${escapeHtml(run.started_at)}" data-duration="${escapeHtml(run.duration_seconds)}"></strong><br>
-      Configured load: ${run.users} users · ${run.duration_seconds}s · ${run.rampup_seconds}s ramp-up
+      Configured load: ${run.users} users · ${run.duration_seconds}s · ${run.rampup_seconds}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${run.generators} load generators` : ''}
       ${run.error ? `<br><span class="status failed">${escapeHtml(run.error)}</span>` : ''}
     </div>
     <div class="runtime-actions">
@@ -345,7 +458,9 @@ function renderRunDetails(run) {
     ['Error rate', formatMetric(summary.errorRatePercent, '%')],
     ['Mean latency', formatMetric(summary.averageResponseMs, ' ms')],
     ['p95 latency', formatMetric(summary.p95ResponseMs, ' ms')]
-  ].map(([name, value]) => `<div class="metric-card"><span>${name}</span><strong>${value ?? '—'}</strong></div>`).join('');
+  ]
+    .map(([name, value]) => `<div class="metric-card"><span>${name}</span><strong>${value ?? '—'}</strong></div>`)
+    .join('');
   summaryCards.hidden = !run.summary || state.analyzedRunId !== run.run_id;
 
   const iframeSrc = run.grafanaUrl;
@@ -396,8 +511,17 @@ function renderSloVerdict(run) {
   return `<div class="slo-verdict ${run.slo_result.passed ? 'pass' : 'fail'}">
     <strong>${run.slo_result.passed ? 'SLO passed' : `SLO failed · ${run.slo_result.failed} of ${run.slo_result.checked} checks`}</strong>
     <span>${escapeHtml(sloText(run.slo))}</span>
-    ${failedChecks.length ? `<ul>${failedChecks.slice(0, 8).map((check) =>
-      `<li>${escapeHtml(check.scope)} · ${escapeHtml(check.label || check.metric)}: ${check.actual ?? 'no data'} (target ≤ ${check.target})</li>`).join('')}</ul>` : ''}
+    ${
+      failedChecks.length
+        ? `<ul>${failedChecks
+            .slice(0, 8)
+            .map(
+              (check) =>
+                `<li>${escapeHtml(check.scope)} · ${escapeHtml(check.label || check.metric)}: ${check.actual ?? 'no data'} (target ≤ ${check.target})</li>`
+            )
+            .join('')}</ul>`
+        : ''
+    }
   </div>`;
 }
 
@@ -414,9 +538,11 @@ function renderResultsReport({ run, baseline }) {
         <div><p class="eyebrow">TEST REPORT</p><h3>${escapeHtml(run.scenario_name)}</h3></div>
         <span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
       </header>
-      <p class="muted">${['starting', 'running'].includes(run.status)
-        ? 'The test is still running. A report will be available when its summary has been generated.'
-        : 'No summary is available for this run.'}</p>`;
+      <p class="muted">${
+        ['starting', 'running'].includes(run.status)
+          ? 'The test is still running. A report will be available when its summary has been generated.'
+          : 'No summary is available for this run.'
+      }</p>`;
     return;
   }
 
@@ -434,42 +560,52 @@ function renderResultsReport({ run, baseline }) {
       <span><strong>Script</strong>${escapeHtml(run.script_name || 'unknown')} · v${escapeHtml(run.script_version ?? 'unknown')}</span>
       <span><strong>Started</strong>${escapeHtml(startedAt)}</span>
       <span><strong>Ended</strong>${escapeHtml(endedAt)}</span>
-      <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
+      <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${escapeHtml(run.generators)} load generators` : ''}</span>
     </div>
     ${renderSloVerdict(run)}
     <div class="baseline-note">${baselineDescription}</div>
     <div class="results-table-wrap">
       <table class="results-table">
         <thead><tr><th scope="col">Metric</th><th scope="col">Selected run</th><th scope="col">Baseline</th><th scope="col">Change</th></tr></thead>
-        <tbody>${metrics.map((metric) => {
-          const suffix = metric.suffix;
-          const deltaText = metric.delta === null
-            ? '—'
-            : `${metric.delta > 0 ? '+' : ''}${resultValue(metric.delta, suffix)}${metric.percentChange === null ? '' : ` (${metric.percentChange > 0 ? '+' : ''}${metric.percentChange.toFixed(1)}%)`}`;
-          const changeClass = metric.lowerIsBetter === null || metric.delta === null || metric.delta === 0
-            ? ''
-            : (metric.delta < 0 ? 'improved' : 'regressed');
-          return `<tr>
+        <tbody>${metrics
+          .map((metric) => {
+            const suffix = metric.suffix;
+            const deltaText =
+              metric.delta === null
+                ? '—'
+                : `${metric.delta > 0 ? '+' : ''}${resultValue(metric.delta, suffix)}${metric.percentChange === null ? '' : ` (${metric.percentChange > 0 ? '+' : ''}${metric.percentChange.toFixed(1)}%)`}`;
+            const changeClass =
+              metric.lowerIsBetter === null || metric.delta === null || metric.delta === 0
+                ? ''
+                : metric.delta < 0
+                  ? 'improved'
+                  : 'regressed';
+            return `<tr>
             <th scope="row">${escapeHtml(metric.label)}</th>
             <td>${resultValue(metric.value, suffix)}</td>
             <td>${resultValue(metric.baselineValue, suffix)}</td>
             <td class="${changeClass}">${deltaText}</td>
           </tr>`;
-        }).join('')}</tbody>
+          })
+          .join('')}</tbody>
       </table>
     </div>
     <div class="report-actions">
-      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report" target="_blank" rel="noreferrer">Open HTML report ↗</a>
-      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report?download">Download report</a>
+      <button class="secondary-link" type="button" data-report="${escapeHtml(run.run_id)}">Open HTML report ↗</button>
+      <button class="secondary-link" type="button" data-report="${escapeHtml(run.run_id)}" data-download>Download report</button>
     </div>
     <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>
-    ${run.status === 'completed' ? `
+    ${
+      run.status === 'completed'
+        ? `
       <div class="ai-analysis-controls">
         <button class="secondary" type="button" data-ai-analyze="${escapeHtml(run.run_id)}">Explain with local AI</button>
         <span class="muted">Ollama receives summary metrics only. Its response is advisory and is not saved.</span>
       </div>
       <section id="ai-analysis-output" class="ai-analysis-output" aria-live="polite" hidden></section>
-    ` : ''}`;
+    `
+        : ''
+    }`;
 }
 
 async function loadSelectedResults(runId) {
@@ -498,7 +634,10 @@ async function analyzeResultsWithAi(runId, button) {
     if (state.selectedResultRunId !== runId) return;
     output.innerHTML = `<h4>AI analysis · ${escapeHtml(result.model)}</h4><p>${escapeHtml(result.analysis).replace(/\n/g, '<br>')}</p>`;
     if (result.baseline) {
-      output.insertAdjacentHTML('beforeend', `<p class="results-footnote">Compared with baseline ${escapeHtml(result.baseline.runId)}.</p>`);
+      output.insertAdjacentHTML(
+        'beforeend',
+        `<p class="results-footnote">Compared with baseline ${escapeHtml(result.baseline.runId)}.</p>`
+      );
     }
   } catch (error) {
     if (state.selectedResultRunId === runId) output.textContent = error.message;
@@ -544,28 +683,46 @@ async function startRun(scenarioId) {
 }
 
 document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
-$('#create-form').addEventListener('submit', (event) => saveCreateScenario(event).catch((error) => notify(error.message)));
+$('#create-form').addEventListener('submit', (event) =>
+  saveCreateScenario(event).catch((error) => notify(error.message))
+);
 $('#locate-script').addEventListener('click', () => $('#create-script-file').click());
 $('#create-script-file').addEventListener('change', (event) => {
   const file = event.target.files[0];
   if (file) $('#create-script-name').value = file.name;
 });
-$('#update-form').addEventListener('submit', (event) => saveUpdatedScenario(event).catch((error) => notify(error.message)));
-$('#upload-form').addEventListener('submit', (event) => uploadScenarioScript(event).catch((error) => notify(error.message)));
+$('#update-form').addEventListener('submit', (event) =>
+  saveUpdatedScenario(event).catch((error) => notify(error.message))
+);
+$('#upload-form').addEventListener('submit', (event) =>
+  uploadScenarioScript(event).catch((error) => notify(error.message))
+);
 $('#update-select').addEventListener('change', (event) => selectUpdateScenario(event.target.value));
 $('#execute-select').addEventListener('change', renderExecuteDetails);
-$('#runtime-select').addEventListener('change', (event) => loadRun(event.target.value).catch((error) => notify(error.message)));
-$('#results-select').addEventListener('change', (event) => loadSelectedResults(event.target.value).catch((error) => notify(error.message)));
+$('#runtime-select').addEventListener('change', (event) =>
+  loadRun(event.target.value).catch((error) => notify(error.message))
+);
+$('#results-select').addEventListener('change', (event) =>
+  loadSelectedResults(event.target.value).catch((error) => notify(error.message))
+);
 $('#refresh-results').addEventListener('click', () => loadResults().catch((error) => notify(error.message)));
 $('#results-report').addEventListener('click', (event) => {
+  const reportButton = event.target.closest('[data-report]');
+  if (reportButton) return openReport(reportButton.dataset.report, reportButton.hasAttribute('data-download'));
   const button = event.target.closest('[data-ai-analyze]');
   if (button) analyzeResultsWithAi(button.dataset.aiAnalyze, button);
 });
-$('#update-run').addEventListener('click', () => startRun($('#update-select').value).catch((error) => notify(error.message)));
-$('#execute-run').addEventListener('click', () => startRun($('#execute-select').value).catch((error) => notify(error.message)));
+$('#update-run').addEventListener('click', () =>
+  startRun($('#update-select').value).catch((error) => notify(error.message))
+);
+$('#execute-run').addEventListener('click', () =>
+  startRun($('#execute-select').value).catch((error) => notify(error.message))
+);
 $('#refresh-scenarios').addEventListener('click', () => loadScenarios().catch((error) => notify(error.message)));
 $('#refresh-runs').addEventListener('click', () => loadRuns().catch((error) => notify(error.message)));
-$('#refresh-runtime').addEventListener('click', () => loadRun($('#runtime-select').value).catch((error) => notify(error.message)));
+$('#refresh-runtime').addEventListener('click', () =>
+  loadRun($('#runtime-select').value).catch((error) => notify(error.message))
+);
 $('#runtime-details').addEventListener('click', (event) => {
   const abort = event.target.closest('[data-abort]');
   const analyze = event.target.closest('[data-analyze]');

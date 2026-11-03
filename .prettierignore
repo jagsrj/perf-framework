@@ -1,0 +1,8 @@
+node_modules/
+results/
+data/
+docs/
+package-lock.json
+*.jmx
+*.md
+infra/grafana/
