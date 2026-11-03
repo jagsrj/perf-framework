@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 
 ARG JMETER_VERSION=5.6.3
 # SHA-512 of apache-jmeter-${JMETER_VERSION}.tgz as published by Apache
