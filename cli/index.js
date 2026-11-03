@@ -53,7 +53,9 @@ program
 
 program
   .command('ci')
-  .description('Run a scenario through the web app and exit non-zero if it fails or breaches its SLO (for CI pipelines)')
+  .description(
+    'Run a scenario through the web app and exit non-zero if it fails or breaches its SLO (for CI pipelines)'
+  )
   .requiredOption('--scenario <nameOrId>', 'Scenario name or ID')
   .option('--url <url>', 'Web app URL', process.env.PERF_WEB_URL || 'http://localhost:4000')
   .option('--timeout <seconds>', 'Give up and abort after this many seconds (default: duration + 600)')

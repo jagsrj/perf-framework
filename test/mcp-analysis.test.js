@@ -20,8 +20,24 @@ const summary = {
   maxResponseMs: 2000,
   successful: 990,
   transactions: {
-    login: { samples: 500, failures: 0, errorRatePercent: 0, averageResponseMs: 150, p95ResponseMs: 300, p99ResponseMs: 400, maxResponseMs: 600 },
-    search: { samples: 500, failures: 10, errorRatePercent: 2, averageResponseMs: 250, p95ResponseMs: 700, p99ResponseMs: 1200, maxResponseMs: 2000 }
+    login: {
+      samples: 500,
+      failures: 0,
+      errorRatePercent: 0,
+      averageResponseMs: 150,
+      p95ResponseMs: 300,
+      p99ResponseMs: 400,
+      maxResponseMs: 600
+    },
+    search: {
+      samples: 500,
+      failures: 10,
+      errorRatePercent: 2,
+      averageResponseMs: 250,
+      p95ResponseMs: 700,
+      p99ResponseMs: 1200,
+      maxResponseMs: 2000
+    }
   }
 };
 
@@ -32,7 +48,14 @@ test('runTiming reports elapsed and remaining time for active runs', () => {
 });
 
 test('describeRun hides per-transaction detail unless requested', () => {
-  const run = { run_id: 'r1', status: 'completed', started_at: '2026-01-01T00:00:00Z', ended_at: '2026-01-01T00:10:00Z', duration_seconds: 600, summary };
+  const run = {
+    run_id: 'r1',
+    status: 'completed',
+    started_at: '2026-01-01T00:00:00Z',
+    ended_at: '2026-01-01T00:10:00Z',
+    duration_seconds: 600,
+    summary
+  };
   assert.equal(describeRun(run).summary.transactions, undefined);
   assert.equal(describeRun(run).summary.transactionCount, 2);
   assert.ok(describeRun(run, { includeTransactions: true }).summary.transactions.login);
@@ -62,7 +85,10 @@ test('checkSlo passes and fails per metric, including per transaction', () => {
 
   const perTx = checkSlo(summary, { p95Ms: 500 }, { applyToTransactions: true });
   assert.equal(perTx.passed, false);
-  assert.deepEqual(perTx.checks.filter((c) => !c.passed).map((c) => c.scope), ['search']);
+  assert.deepEqual(
+    perTx.checks.filter((c) => !c.passed).map((c) => c.scope),
+    ['search']
+  );
 
   assert.throws(() => checkSlo(summary, {}), /at least one target/);
   assert.equal(checkSlo({ samples: 0, p95ResponseMs: null }, { p95Ms: 100 }).passed, false);
@@ -89,7 +115,10 @@ test('parseLiveMetrics computes throughput and separates transactions', () => {
   assert.equal(live.overall.throughputPerSecond, 10);
   assert.equal(live.overall.errorRatePercent, 1);
   assert.equal(live.activeThreads, 50);
-  assert.deepEqual(live.transactions.map((t) => t.transaction), ['search', 'login']);
+  assert.deepEqual(
+    live.transactions.map((t) => t.transaction),
+    ['search', 'login']
+  );
   assert.equal(parseLiveMetrics([], [], 60).overall, null);
 });
 
@@ -97,5 +126,8 @@ test('assertWithinGuardrails blocks oversized load', () => {
   const config = { maxUsers: 100, maxDurationSeconds: 600 };
   assert.doesNotThrow(() => assertWithinGuardrails({ users: 100, duration: 600, rampup: 60 }, config));
   assert.throws(() => assertWithinGuardrails({ users: 101, duration: 600, rampup: 0 }, config), /MCP_MAX_USERS=100/);
-  assert.throws(() => assertWithinGuardrails({ users: 1, duration: 601, rampup: 0 }, config), /MCP_MAX_DURATION_SECONDS=600/);
+  assert.throws(
+    () => assertWithinGuardrails({ users: 1, duration: 601, rampup: 0 }, config),
+    /MCP_MAX_DURATION_SECONDS=600/
+  );
 });

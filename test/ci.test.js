@@ -7,19 +7,43 @@ import { EXIT, decideExit, resolveScenario, runGate, toJUnit } from '../cli/ci.j
 
 const scenarios = [
   { id: 'a', name: 'checkout', has_script: true, users: 10, duration_seconds: 60, rampup_seconds: 5 },
-  { id: 'b', name: 'dup', has_script: true }, { id: 'c', name: 'dup', has_script: true }
+  { id: 'b', name: 'dup', has_script: true },
+  { id: 'c', name: 'dup', has_script: true }
 ];
 const sloResult = (passed) => ({
-  passed, checked: 2, failed: passed ? 0 : 1,
+  passed,
+  checked: 2,
+  failed: passed ? 0 : 1,
   checks: [
-    { scope: 'overall', metric: 'p95ResponseMs', label: 'p95 latency', target: 500, actual: passed ? 400 : 650, passed },
+    {
+      scope: 'overall',
+      metric: 'p95ResponseMs',
+      label: 'p95 latency',
+      target: 500,
+      actual: passed ? 400 : 650,
+      passed
+    },
     { scope: 'overall', metric: 'errorRatePercent', label: 'Error rate', target: 1, actual: 0.5, passed: true }
   ]
 });
 const completed = (overrides = {}) => ({
-  run_id: 'r1', scenario_name: 'checkout', status: 'completed', started_at: '2026-01-01T00:00:00Z', ended_at: '2026-01-01T00:01:00Z',
-  summary: { samples: 10, failures: 0, errorRatePercent: 0, averageResponseMs: 100, p95ResponseMs: 400, p99ResponseMs: 450, maxResponseMs: 500 },
-  slo: { p95Ms: 500 }, slo_result: sloResult(true), ...overrides
+  run_id: 'r1',
+  scenario_name: 'checkout',
+  status: 'completed',
+  started_at: '2026-01-01T00:00:00Z',
+  ended_at: '2026-01-01T00:01:00Z',
+  summary: {
+    samples: 10,
+    failures: 0,
+    errorRatePercent: 0,
+    averageResponseMs: 100,
+    p95ResponseMs: 400,
+    p99ResponseMs: 450,
+    maxResponseMs: 500
+  },
+  slo: { p95Ms: 500 },
+  slo_result: sloResult(true),
+  ...overrides
 });
 
 function fakeClient(statuses, final) {
@@ -28,9 +52,14 @@ function fakeClient(statuses, final) {
   return {
     calls,
     listScenarios: async () => scenarios,
-    startRun: async (id) => { calls.push(['start', id]); return { run_id: 'r1', status: 'starting' }; },
+    startRun: async (id) => {
+      calls.push(['start', id]);
+      return { run_id: 'r1', status: 'starting' };
+    },
     getRun: async () => (index < statuses.length ? { run_id: 'r1', status: statuses[index++] } : final),
-    abortRun: async (id) => { calls.push(['abort', id]); },
+    abortRun: async (id) => {
+      calls.push(['abort', id]);
+    },
     request: async () => '<html>report</html>'
   };
 }
@@ -55,8 +84,12 @@ test('runGate polls until the run finishes and writes JUnit and report files', a
   const client = fakeClient(['running', 'running'], completed({ slo_result: sloResult(false) }));
   const logs = [];
   const result = await runGate({
-    client, scenario: 'checkout', wait: async () => {}, log: (line) => logs.push(line),
-    junitPath: path.join(dir, 'junit.xml'), reportPath: path.join(dir, 'report.html')
+    client,
+    scenario: 'checkout',
+    wait: async () => {},
+    log: (line) => logs.push(line),
+    junitPath: path.join(dir, 'junit.xml'),
+    reportPath: path.join(dir, 'report.html')
   });
   assert.equal(result.code, EXIT.SLO_FAILED);
   assert.deepEqual(client.calls, [['start', 'a']]);
@@ -71,8 +104,15 @@ test('runGate aborts the run on timeout', async () => {
   let clock = 0;
   const client = fakeClient(Array(100).fill('running'), null);
   const result = await runGate({
-    client, scenario: 'a', timeoutSeconds: 30, pollSeconds: 10, log: () => {},
-    wait: async (ms) => { clock += ms; }, now: () => clock
+    client,
+    scenario: 'a',
+    timeoutSeconds: 30,
+    pollSeconds: 10,
+    log: () => {},
+    wait: async (ms) => {
+      clock += ms;
+    },
+    now: () => clock
   });
   assert.equal(result.code, EXIT.ERROR);
   assert.match(result.reason, /Timed out/);

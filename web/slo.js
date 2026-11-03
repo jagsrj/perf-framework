@@ -42,21 +42,23 @@ function invalid(message) {
 // Check a run summary against upper-bound targets. Missing data counts as a failure, not a pass.
 export function evaluateSlo(summary, targets, { applyToTransactions = targets?.applyToTransactions === true } = {}) {
   const active = Object.entries(SLO_TARGETS).filter(([key]) => Number.isFinite(targets?.[key]));
-  if (!active.length) throw new Error('Provide at least one target (averageMs, p95Ms, p99Ms, maxMs or errorRatePercent).');
+  if (!active.length)
+    throw new Error('Provide at least one target (averageMs, p95Ms, p99Ms, maxMs or errorRatePercent).');
 
-  const evaluate = (scope, data) => active.map(([key, { summaryKey, label }]) => {
-    const actual = data?.[summaryKey];
-    const hasValue = Number.isFinite(actual);
-    return {
-      scope,
-      metric: summaryKey,
-      label,
-      target: targets[key],
-      actual: hasValue ? round(actual) : null,
-      passed: hasValue && actual <= targets[key],
-      ...(hasValue ? {} : { note: 'no data' })
-    };
-  });
+  const evaluate = (scope, data) =>
+    active.map(([key, { summaryKey, label }]) => {
+      const actual = data?.[summaryKey];
+      const hasValue = Number.isFinite(actual);
+      return {
+        scope,
+        metric: summaryKey,
+        label,
+        target: targets[key],
+        actual: hasValue ? round(actual) : null,
+        passed: hasValue && actual <= targets[key],
+        ...(hasValue ? {} : { note: 'no data' })
+      };
+    });
 
   const checks = evaluate('overall', summary);
   if (applyToTransactions) {

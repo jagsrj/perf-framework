@@ -20,7 +20,8 @@ function findTestPlanChildrenTreeClose(xml) {
   }
 
   const treeStart = afterTestPlan + treeMatch.index;
-  const between = xml.slice(afterTestPlan, treeStart)
+  const between = xml
+    .slice(afterTestPlan, treeStart)
     .replace(/<!--[\s\S]*?-->/g, '')
     .trim();
 
@@ -62,12 +63,16 @@ function createBackendListenerXml() {
     ['TAG_runId', '${__P(runId,unknown)}']
   ];
 
-  const argumentsXml = properties.map(([name, value]) => `
+  const argumentsXml = properties
+    .map(
+      ([name, value]) => `
             <elementProp name="${name}" elementType="Argument">
               <stringProp name="Argument.name">${name}</stringProp>
               <stringProp name="Argument.value">${value}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
-            </elementProp>`).join('');
+            </elementProp>`
+    )
+    .join('');
 
   return `
       <BackendListener guiclass="BackendListenerGui" testclass="BackendListener" testname="InfluxDB Backend Listener" enabled="true">

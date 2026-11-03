@@ -12,17 +12,13 @@ export function compareSummaries(current, baseline) {
   return resultMetrics.map((metric) => {
     const value = current?.[metric.key] ?? null;
     const baselineValue = baseline?.[metric.key] ?? null;
-    const delta = Number.isFinite(value) && Number.isFinite(baselineValue)
-      ? value - baselineValue
-      : null;
+    const delta = Number.isFinite(value) && Number.isFinite(baselineValue) ? value - baselineValue : null;
     return {
       ...metric,
       value,
       baselineValue,
       delta,
-      percentChange: delta !== null && baselineValue !== 0
-        ? delta / baselineValue * 100
-        : null
+      percentChange: delta !== null && baselineValue !== 0 ? (delta / baselineValue) * 100 : null
     };
   });
 }

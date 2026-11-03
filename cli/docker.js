@@ -1,19 +1,10 @@
-// This file handles the execution of JMeter within a Docker container. 
+// This file handles the execution of JMeter within a Docker container.
 // It manages the Docker CLI commands, including running the JMeter image and streaming output.
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-export function createDockerArgs(
-  runId,
-  jmxPath,
-  influxdbUrl,
-  testName,
-  threads,
-  duration,
-  rampup,
-  resultsDir
-) {
+export function createDockerArgs(runId, jmxPath, influxdbUrl, testName, threads, duration, rampup, resultsDir) {
   const scriptDir = path.dirname(path.resolve(jmxPath));
   const resultsPath = path.resolve(resultsDir);
   const image = process.env.JMETER_IMAGE || 'perf-framework-jmeter:5.6.3';
@@ -21,15 +12,21 @@ export function createDockerArgs(
 
   const args = [
     'run',
-    '--label', `perf-framework.run-id=${runId}`,
+    '--label',
+    `perf-framework.run-id=${runId}`,
     `--network=${dockerNetwork}`,
-    '-v', `${scriptDir}:/scripts:ro`,
-    '-v', `${resultsPath}:/results`,
+    '-v',
+    `${scriptDir}:/scripts:ro`,
+    '-v',
+    `${resultsPath}:/results`,
     image,
     '-n',
-    '-t', `/scripts/${path.basename(jmxPath)}`,
-    '-l', '/results/results.jtl',
-    '-j', '/results/jmeter.log',
+    '-t',
+    `/scripts/${path.basename(jmxPath)}`,
+    '-l',
+    '/results/results.jtl',
+    '-j',
+    '/results/jmeter.log',
     `-Jthreads=${threads}`,
     `-Jduration=${duration}`,
     `-Jrampup=${rampup}`,
@@ -48,8 +45,12 @@ function runDocker(args) {
     let stderr = '';
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
     child.once('error', reject);
     child.once('close', (code) => {
       if (code !== 0) {
@@ -61,7 +62,16 @@ function runDocker(args) {
   });
 }
 
-export async function startJMeterInDocker(runId, jmxPath, influxdbUrl, testName, threads, duration, rampup, resultsDir) {
+export async function startJMeterInDocker(
+  runId,
+  jmxPath,
+  influxdbUrl,
+  testName,
+  threads,
+  duration,
+  rampup,
+  resultsDir
+) {
   const args = createDockerArgs(runId, jmxPath, influxdbUrl, testName, threads, duration, rampup, resultsDir);
   args.splice(1, 0, '--detach');
   return runDocker(args);
@@ -85,26 +95,11 @@ export async function stopJMeterContainer(containerId) {
 }
 
 export async function findJMeterContainer(runId) {
-  const output = await runDocker([
-    'ps',
-    '--all',
-    '--quiet',
-    '--filter',
-    `label=perf-framework.run-id=${runId}`
-  ]);
+  const output = await runDocker(['ps', '--all', '--quiet', '--filter', `label=perf-framework.run-id=${runId}`]);
   return output.split(/\s+/).find(Boolean) || null;
 }
 
-export async function runJMeterInDocker(
-  runId,
-  jmxPath,
-  influxdbUrl,
-  testName,
-  threads,
-  duration,
-  rampup,
-  resultsDir
-) {
+export async function runJMeterInDocker(runId, jmxPath, influxdbUrl, testName, threads, duration, rampup, resultsDir) {
   const args = createDockerArgs(runId, jmxPath, influxdbUrl, testName, threads, duration, rampup, resultsDir);
   return new Promise((resolve, reject) => {
     const child = spawn('docker', args, { stdio: 'inherit' });

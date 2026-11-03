@@ -29,9 +29,8 @@ function recordSample(aggregate, row) {
 
   aggregate.responseTimeCount++;
   aggregate.responseTimeSum += responseTime;
-  aggregate.maxResponseMs = aggregate.maxResponseMs === null
-    ? responseTime
-    : Math.max(aggregate.maxResponseMs, responseTime);
+  aggregate.maxResponseMs =
+    aggregate.maxResponseMs === null ? responseTime : Math.max(aggregate.maxResponseMs, responseTime);
   if (responseTime === 0) {
     aggregate.zeroResponseTimes++;
     return;
@@ -55,9 +54,7 @@ function summarizeAggregate(aggregate) {
     samples: aggregate.samples,
     failures: aggregate.failures,
     errorRatePercent: aggregate.samples ? (aggregate.failures / aggregate.samples) * 100 : 0,
-    averageResponseMs: aggregate.responseTimeCount
-      ? aggregate.responseTimeSum / aggregate.responseTimeCount
-      : null,
+    averageResponseMs: aggregate.responseTimeCount ? aggregate.responseTimeSum / aggregate.responseTimeCount : null,
     p95ResponseMs: percentile(aggregate, 95),
     p99ResponseMs: percentile(aggregate, 99),
     maxResponseMs: aggregate.maxResponseMs
@@ -79,10 +76,9 @@ function createCollector() {
       return {
         ...total,
         successful: total.samples - total.failures,
-        transactions: Object.fromEntries([...transactions].map(([label, aggregate]) => [
-          label,
-          summarizeAggregate(aggregate)
-        ]))
+        transactions: Object.fromEntries(
+          [...transactions].map(([label, aggregate]) => [label, summarizeAggregate(aggregate)])
+        )
       };
     }
   };

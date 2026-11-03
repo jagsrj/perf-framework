@@ -30,12 +30,14 @@ export class PerfApiClient {
     const url = `${this.baseUrl}${pathname}`;
     let response;
     try {
-      response = await withTimeout(this.timeoutMs, (signal) => this.fetch(url, {
-        method,
-        signal,
-        headers: json === undefined ? undefined : { 'content-type': 'application/json' },
-        body: json === undefined ? body : JSON.stringify(json)
-      }));
+      response = await withTimeout(this.timeoutMs, (signal) =>
+        this.fetch(url, {
+          method,
+          signal,
+          headers: json === undefined ? undefined : { 'content-type': 'application/json' },
+          body: json === undefined ? body : JSON.stringify(json)
+        })
+      );
     } catch (error) {
       if (error.name === 'AbortError') {
         throw new PerfApiError(`The web app did not respond within ${this.timeoutMs} ms (${method} ${pathname}).`, 504);
@@ -60,17 +62,39 @@ export class PerfApiClient {
     return text ? JSON.parse(text) : null;
   }
 
-  health() { return this.request('GET', '/api/health'); }
-  listScenarios() { return this.request('GET', '/api/scenarios'); }
-  createScenario(input) { return this.request('POST', '/api/scenarios', { json: input }); }
-  updateScenario(id, input) { return this.request('PUT', `/api/scenarios/${encodeURIComponent(id)}`, { json: input }); }
-  getScript(id) { return this.request('GET', `/api/scenarios/${encodeURIComponent(id)}/script`, { accept: 'text' }); }
-  startRun(id) { return this.request('POST', `/api/scenarios/${encodeURIComponent(id)}/runs`); }
-  abortRun(runId) { return this.request('POST', `/api/runs/${encodeURIComponent(runId)}/abort`); }
-  listRuns() { return this.request('GET', '/api/runs'); }
-  getRun(runId) { return this.request('GET', `/api/runs/${encodeURIComponent(runId)}`); }
-  getRunResults(runId) { return this.request('GET', `/api/runs/${encodeURIComponent(runId)}/results`); }
-  getTrends(id, limit) { return this.request('GET', `/api/scenarios/${encodeURIComponent(id)}/trends?limit=${limit}`); }
+  health() {
+    return this.request('GET', '/api/health');
+  }
+  listScenarios() {
+    return this.request('GET', '/api/scenarios');
+  }
+  createScenario(input) {
+    return this.request('POST', '/api/scenarios', { json: input });
+  }
+  updateScenario(id, input) {
+    return this.request('PUT', `/api/scenarios/${encodeURIComponent(id)}`, { json: input });
+  }
+  getScript(id) {
+    return this.request('GET', `/api/scenarios/${encodeURIComponent(id)}/script`, { accept: 'text' });
+  }
+  startRun(id) {
+    return this.request('POST', `/api/scenarios/${encodeURIComponent(id)}/runs`);
+  }
+  abortRun(runId) {
+    return this.request('POST', `/api/runs/${encodeURIComponent(runId)}/abort`);
+  }
+  listRuns() {
+    return this.request('GET', '/api/runs');
+  }
+  getRun(runId) {
+    return this.request('GET', `/api/runs/${encodeURIComponent(runId)}`);
+  }
+  getRunResults(runId) {
+    return this.request('GET', `/api/runs/${encodeURIComponent(runId)}/results`);
+  }
+  getTrends(id, limit) {
+    return this.request('GET', `/api/scenarios/${encodeURIComponent(id)}/trends?limit=${limit}`);
+  }
 
   async getScenario(id) {
     const scenarios = await this.listScenarios();

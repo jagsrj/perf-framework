@@ -11,18 +11,51 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCENARIO_ID = '11111111-2222-4333-8444-555555555555';
 const summary = {
-  samples: 100, failures: 1, errorRatePercent: 1, averageResponseMs: 120, p95ResponseMs: 250,
-  p99ResponseMs: 400, maxResponseMs: 800, successful: 99,
-  transactions: { login: { samples: 100, failures: 1, errorRatePercent: 1, averageResponseMs: 120, p95ResponseMs: 250, p99ResponseMs: 400, maxResponseMs: 800 } }
+  samples: 100,
+  failures: 1,
+  errorRatePercent: 1,
+  averageResponseMs: 120,
+  p95ResponseMs: 250,
+  p99ResponseMs: 400,
+  maxResponseMs: 800,
+  successful: 99,
+  transactions: {
+    login: {
+      samples: 100,
+      failures: 1,
+      errorRatePercent: 1,
+      averageResponseMs: 120,
+      p95ResponseMs: 250,
+      p99ResponseMs: 400,
+      maxResponseMs: 800
+    }
+  }
 };
 const scenario = {
-  id: SCENARIO_ID, name: 'login-smoke', script_name: 'login.jmx', original_filename: 'login.jmx', script_version: 1,
-  users: 50, duration_seconds: 300, rampup_seconds: 30, has_script: true
+  id: SCENARIO_ID,
+  name: 'login-smoke',
+  script_name: 'login.jmx',
+  original_filename: 'login.jmx',
+  script_version: 1,
+  users: 50,
+  duration_seconds: 300,
+  rampup_seconds: 30,
+  has_script: true
 };
 const run = (id, overrides = {}) => ({
-  run_id: id, scenario_id: SCENARIO_ID, scenario_name: 'login-smoke', script_sha256: 'abc', status: 'completed',
-  users: 50, duration_seconds: 300, rampup_seconds: 30, started_at: '2026-01-01T00:00:00Z',
-  ended_at: '2026-01-01T00:05:00Z', summary, grafanaUrl: 'http://localhost:3000/d/x', ...overrides
+  run_id: id,
+  scenario_id: SCENARIO_ID,
+  scenario_name: 'login-smoke',
+  script_sha256: 'abc',
+  status: 'completed',
+  users: 50,
+  duration_seconds: 300,
+  rampup_seconds: 30,
+  started_at: '2026-01-01T00:00:00Z',
+  ended_at: '2026-01-01T00:05:00Z',
+  summary,
+  grafanaUrl: 'http://localhost:3000/d/x',
+  ...overrides
 });
 
 const calls = [];
@@ -48,15 +81,23 @@ before(async () => {
     };
     if (request.url === '/api/health') return send(200, { status: 'ok' });
     if (request.url === '/api/scenarios' && request.method === 'GET') return send(200, [scenario]);
-    if (request.url === `/api/scenarios/${SCENARIO_ID}` && request.method === 'PUT') return send(200, { ...scenario, ...JSON.parse(body) });
-    if (request.url === `/api/scenarios/${SCENARIO_ID}/script` && request.method === 'POST') return send(200, { ...scenario, script_version: 2 });
-    if (request.url === `/api/scenarios/${SCENARIO_ID}/runs`) return send(202, run('run-new', { status: 'starting', summary: null, ended_at: null }));
+    if (request.url === `/api/scenarios/${SCENARIO_ID}` && request.method === 'PUT')
+      return send(200, { ...scenario, ...JSON.parse(body) });
+    if (request.url === `/api/scenarios/${SCENARIO_ID}/script` && request.method === 'POST')
+      return send(200, { ...scenario, script_version: 2 });
+    if (request.url === `/api/scenarios/${SCENARIO_ID}/runs`)
+      return send(202, run('run-new', { status: 'starting', summary: null, ended_at: null }));
     if (request.url === '/api/runs') return send(200, [run('run-2'), run('run-1')]);
-    if (request.url === '/api/runs/run-new') return send(200, run('run-new', { status: 'running', summary: null, ended_at: null }));
+    if (request.url === '/api/runs/run-new')
+      return send(200, run('run-new', { status: 'running', summary: null, ended_at: null }));
     if (request.url === '/api/runs/run-2') return send(200, run('run-2'));
-    if (request.url === '/api/runs/run-1') return send(200, run('run-1', { summary: { ...summary, p95ResponseMs: 150 } }));
+    if (request.url === '/api/runs/run-1')
+      return send(200, run('run-1', { summary: { ...summary, p95ResponseMs: 150 } }));
     if (request.url === '/api/runs/run-2/results') {
-      return send(200, { run: run('run-2'), baseline: { run_id: 'run-1', started_at: '2025-12-31T00:00:00Z', summary: { ...summary, p95ResponseMs: 150 } } });
+      return send(200, {
+        run: run('run-2'),
+        baseline: { run_id: 'run-1', started_at: '2025-12-31T00:00:00Z', summary: { ...summary, p95ResponseMs: 150 } }
+      });
     }
     send(404, { error: 'Not found' });
   });
@@ -65,25 +106,33 @@ before(async () => {
     const q = new URL(request.url, 'http://x').searchParams.get('q');
     const series = q.includes('meanAT')
       ? [{ columns: ['time', 'active_threads'], values: [[0, 25]] }]
-      : [{ tags: { transaction: 'all' }, columns: ['time', 'samples', 'errors', 'avg_ms', 'p95_ms', 'p99_ms'], values: [[0, 300, 3, 110, 240, 390]] }];
+      : [
+          {
+            tags: { transaction: 'all' },
+            columns: ['time', 'samples', 'errors', 'avg_ms', 'p95_ms', 'p99_ms'],
+            values: [[0, 300, 3, 110, 240, 390]]
+          }
+        ];
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify({ results: [{ statement_id: 0, series }] }));
   });
 
   client = new Client({ name: 'test', version: '1.0.0' });
-  await client.connect(new StdioClientTransport({
-    command: process.execPath,
-    args: [path.join(projectRoot, 'mcp', 'server.js')],
-    cwd: projectRoot,
-    stderr: 'ignore',
-    env: {
-      ...process.env,
-      PERF_WEB_URL: `http://127.0.0.1:${webServer.address().port}`,
-      INFLUXDB_QUERY_URL: `http://127.0.0.1:${influxServer.address().port}/query`,
-      MCP_MAX_USERS: '100',
-      MCP_MAX_DURATION_SECONDS: '600'
-    }
-  }));
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(projectRoot, 'mcp', 'server.js')],
+      cwd: projectRoot,
+      stderr: 'ignore',
+      env: {
+        ...process.env,
+        PERF_WEB_URL: `http://127.0.0.1:${webServer.address().port}`,
+        INFLUXDB_QUERY_URL: `http://127.0.0.1:${influxServer.address().port}/query`,
+        MCP_MAX_USERS: '100',
+        MCP_MAX_DURATION_SECONDS: '600'
+      }
+    })
+  );
 });
 
 after(async () => {
@@ -107,9 +156,22 @@ const call = async (name, args = {}) => {
 test('exposes the expected tools', async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    'abort_run', 'check_health', 'check_slo', 'compare_runs', 'create_scenario', 'get_live_metrics',
-    'get_report_url', 'get_run', 'get_run_results', 'get_script', 'get_trends', 'list_runs', 'list_scenarios', 'run_scenario',
-    'update_scenario', 'upload_script'
+    'abort_run',
+    'check_health',
+    'check_slo',
+    'compare_runs',
+    'create_scenario',
+    'get_live_metrics',
+    'get_report_url',
+    'get_run',
+    'get_run_results',
+    'get_script',
+    'get_trends',
+    'list_runs',
+    'list_scenarios',
+    'run_scenario',
+    'update_scenario',
+    'upload_script'
   ]);
 });
 
@@ -135,11 +197,21 @@ test('update_scenario is blocked above the guardrail and passes through otherwis
   const allowed = await call('update_scenario', { scenarioId: SCENARIO_ID, users: 80 });
   assert.equal(allowed.isError, false);
   const put = calls.findLast((c) => c.method === 'PUT');
-  assert.deepEqual(JSON.parse(put.body), { name: 'login-smoke', scriptName: 'login.jmx', users: 80, duration: 300, rampup: 30 });
+  assert.deepEqual(JSON.parse(put.body), {
+    name: 'login-smoke',
+    scriptName: 'login.jmx',
+    users: 80,
+    duration: 300,
+    rampup: 30
+  });
 });
 
 test('upload_script sends multipart JMX content', async () => {
-  const { isError, data } = await call('upload_script', { scenarioId: SCENARIO_ID, jmxContent: '<jmeterTestPlan/>', filename: 'new' });
+  const { isError, data } = await call('upload_script', {
+    scenarioId: SCENARIO_ID,
+    jmxContent: '<jmeterTestPlan/>',
+    filename: 'new'
+  });
   assert.equal(isError, false);
   assert.equal(data.script_version, 2);
   const upload = calls.findLast((c) => c.url.endsWith('/script'));

@@ -59,8 +59,9 @@ export function compareRunSummaries(current, baseline, { tolerancePercent = 10 }
   const baselineTx = baseline?.transactions || {};
   const shared = Object.keys(currentTx).filter((label) => label in baselineTx);
   const transactions = shared.map((label) => {
-    const metrics = compareSummaries(currentTx[label], baselineTx[label])
-      .filter((metric) => ['errorRatePercent', 'averageResponseMs', 'p95ResponseMs'].includes(metric.key));
+    const metrics = compareSummaries(currentTx[label], baselineTx[label]).filter((metric) =>
+      ['errorRatePercent', 'averageResponseMs', 'p95ResponseMs'].includes(metric.key)
+    );
     return {
       transaction: label,
       metrics: metrics.map((metric) => ({
@@ -75,9 +76,9 @@ export function compareRunSummaries(current, baseline, { tolerancePercent = 10 }
 
   const regressions = [
     ...overall.filter((m) => m.verdict === 'worse').map((m) => `overall ${m.metric} ${m.percentChange}%`),
-    ...transactions.flatMap((tx) => tx.metrics
-      .filter((m) => m.verdict === 'worse')
-      .map((m) => `${tx.transaction} ${m.metric} ${m.percentChange}%`))
+    ...transactions.flatMap((tx) =>
+      tx.metrics.filter((m) => m.verdict === 'worse').map((m) => `${tx.transaction} ${m.metric} ${m.percentChange}%`)
+    )
   ];
 
   return {
@@ -98,8 +99,9 @@ export function checkSlo(summary, targets, { applyToTransactions = false } = {})
 export function liveMetricsQueries(scenarioName, runId, windowSeconds) {
   const where = `time > now() - ${windowSeconds}s AND "application" = ${influxString(scenarioName)} AND "runId" = ${influxString(runId)}`;
   return {
-    byTransaction: `SELECT sum("count") AS samples, sum("countError") AS errors, mean("avg") AS avg_ms, `
-      + `max("pct95.0") AS p95_ms, max("pct99.0") AS p99_ms FROM "jmeter" WHERE ${where} GROUP BY "transaction"`,
+    byTransaction:
+      `SELECT sum("count") AS samples, sum("countError") AS errors, mean("avg") AS avg_ms, ` +
+      `max("pct95.0") AS p95_ms, max("pct99.0") AS p99_ms FROM "jmeter" WHERE ${where} GROUP BY "transaction"`,
     threads: `SELECT last("meanAT") AS active_threads FROM "jmeter" WHERE ${where} AND "transaction" = 'internal'`
   };
 }
@@ -155,6 +157,8 @@ export function assertWithinGuardrails({ users, duration, rampup }, config) {
   }
   if (rampup > duration) problems.push(`ramp-up ${rampup}s is longer than duration ${duration}s`);
   if (problems.length) {
-    throw new Error(`Blocked by MCP guardrails: ${problems.join('; ')}. A person can raise the limits in the MCP server environment.`);
+    throw new Error(
+      `Blocked by MCP guardrails: ${problems.join('; ')}. A person can raise the limits in the MCP server environment.`
+    );
   }
 }

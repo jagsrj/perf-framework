@@ -2,7 +2,7 @@
 import { randomBytes } from 'crypto';
 
 export function generateRunId() {
-    const timestamp = Date.now().toString();
-    const randomSuffix = randomBytes(4).toString('hex');
-    return `${timestamp}-${randomSuffix}`;
+  const timestamp = Date.now().toString();
+  const randomSuffix = randomBytes(4).toString('hex');
+  return `${timestamp}-${randomSuffix}`;
 }

@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Run scenario and enforce its SLO
-        working-directory: ${{ vars.PERF_FRAMEWORK_DIR }}   # path to your perf-framework clone on the runner
+        working-directory: ${{ vars.PERF_FRAMEWORK_DIR }} # path to your perf-framework clone on the runner
         run: |
           node cli/index.js ci \
             --scenario "${{ inputs.scenario || 'checkout-smoke' }}" \

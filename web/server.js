@@ -29,8 +29,9 @@ const resultsRoot = path.join(projectRoot, 'results');
 const port = Number(process.env.WEB_PORT || 4000);
 const influxdbUrl = process.env.INFLUXDB_URL || 'http://influxdb:8086/write?db=jmeter';
 const databasePassword = process.env.POSTGRES_PASSWORD || 'local-dev-only';
-const databaseUrl = process.env.DATABASE_URL
-  || `postgres://perf_framework:${encodeURIComponent(databasePassword)}@localhost:5433/perf_framework`;
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  `postgres://perf_framework:${encodeURIComponent(databasePassword)}@localhost:5433/perf_framework`;
 const pool = new Pool({ connectionString: databaseUrl });
 const notifications = notificationSettings();
 const app = express();
@@ -111,8 +112,11 @@ app.use((request, response, next) => {
   if (origin) {
     try {
       const originUrl = new URL(origin);
-      if (originUrl.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(originUrl.hostname)
-        || Number(originUrl.port || 80) !== port) {
+      if (
+        originUrl.protocol !== 'http:' ||
+        !['localhost', '127.0.0.1'].includes(originUrl.hostname) ||
+        Number(originUrl.port || 80) !== port
+      ) {
         return response.status(403).json({ error: 'Cross-origin requests are not allowed.' });
       }
     } catch {
@@ -157,10 +161,13 @@ const upload = multer({
   }
 });
 
-app.get('/api/health', asyncHandler(async (request, response) => {
-  await pool.query('SELECT 1');
-  response.json({ status: 'ok' });
-}));
+app.get(
+  '/api/health',
+  asyncHandler(async (request, response) => {
+    await pool.query('SELECT 1');
+    response.json({ status: 'ok' });
+  })
+);
 
 function toScenarioInput(body) {
   const invalid = (message) => Object.assign(new Error(message), { statusCode: 400 });
@@ -267,10 +274,10 @@ async function recoverActiveRuns() {
         await finishRun(run.run_id, 1, 'No matching JMeter container was found during application recovery.');
         continue;
       }
-      await pool.query(
-        "UPDATE test_runs SET status = 'running', container_id = $2 WHERE run_id = $1",
-        [run.run_id, containerId]
-      );
+      await pool.query("UPDATE test_runs SET status = 'running', container_id = $2 WHERE run_id = $1", [
+        run.run_id,
+        containerId
+      ]);
       monitorRunContainer(run.run_id, containerId).catch((error) => {
         console.error(`Run recovery failed for ${run.run_id}: ${error.message}`);
       });
@@ -281,10 +288,7 @@ async function recoverActiveRuns() {
 }
 
 async function finishRun(runId, exitCode, errorMessage = null) {
-  const runResult = await pool.query(
-    'SELECT results_dir, slo FROM test_runs WHERE run_id = $1',
-    [runId]
-  );
+  const runResult = await pool.query('SELECT results_dir, slo FROM test_runs WHERE run_id = $1', [runId]);
   if (!runResult.rowCount) return;
 
   let summary = null;
@@ -322,14 +326,17 @@ async function finishRun(runId, exitCode, errorMessage = null) {
   }
 }
 
-app.get('/api/scenarios', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT id, name, script_name, original_filename, script_version, users, duration_seconds, rampup_seconds,
+app.get(
+  '/api/scenarios',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT id, name, script_name, original_filename, script_version, users, duration_seconds, rampup_seconds,
             (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at
      FROM scenarios ORDER BY updated_at DESC`
-  );
-  response.json(result.rows);
-}));
+    );
+    response.json(result.rows);
+  })
+);
 
 app.post('/api/scenarios', async (request, response) => {
   try {
@@ -339,7 +346,15 @@ app.post('/api/scenarios', async (request, response) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, name, script_name, original_filename, script_version, users, duration_seconds, rampup_seconds,
                  (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at`,
-      [randomUUID(), scenario.name, scenario.scriptName, scenario.users, scenario.duration, scenario.rampup, scenario.slo]
+      [
+        randomUUID(),
+        scenario.name,
+        scenario.scriptName,
+        scenario.users,
+        scenario.duration,
+        scenario.rampup,
+        scenario.slo
+      ]
     );
     response.status(201).json(result.rows[0]);
   } catch (error) {
@@ -357,8 +372,16 @@ app.put('/api/scenarios/:id', async (request, response) => {
        WHERE id = $1
        RETURNING id, name, script_name, original_filename, script_version, users, duration_seconds, rampup_seconds,
                  (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at`,
-      [request.params.id, scenario.name, scenario.scriptName, scenario.users, scenario.duration, scenario.rampup,
-        scenario.hasSlo, scenario.slo]
+      [
+        request.params.id,
+        scenario.name,
+        scenario.scriptName,
+        scenario.users,
+        scenario.duration,
+        scenario.rampup,
+        scenario.hasSlo,
+        scenario.slo
+      ]
     );
     if (!result.rowCount) return response.status(404).json({ error: 'Scenario not found.' });
     response.json(result.rows[0]);
@@ -367,288 +390,320 @@ app.put('/api/scenarios/:id', async (request, response) => {
   }
 });
 
-app.post('/api/scenarios/:id/script', asyncHandler(async (request, response) => {
-  await mkdir(path.join(uploadRoot, request.params.id), { recursive: true });
-  upload.single('script')(request, response, async (uploadError) => {
-    if (uploadError) return respondError(response, uploadError, 400);
-    if (!request.file) return response.status(400).json({ error: 'Choose a .jmx script to upload.' });
+app.post(
+  '/api/scenarios/:id/script',
+  asyncHandler(async (request, response) => {
+    await mkdir(path.join(uploadRoot, request.params.id), { recursive: true });
+    upload.single('script')(request, response, async (uploadError) => {
+      if (uploadError) return respondError(response, uploadError, 400);
+      if (!request.file) return response.status(400).json({ error: 'Choose a .jmx script to upload.' });
 
-    try {
-      const scenarioResult = await pool.query('SELECT id FROM scenarios WHERE id = $1', [request.params.id]);
-      if (!scenarioResult.rowCount) {
-        await unlink(request.file.path);
-        return response.status(404).json({ error: 'Scenario not found.' });
-      }
-
-      const xml = await readFile(request.file.path, 'utf8');
       try {
-        const parsed = await parseStringPromise(xml);
-        if (!parsed.jmeterTestPlan) throw new Error('The uploaded XML is not a JMeter test plan.');
-      } catch (error) {
-        await unlink(request.file.path).catch(() => {});
-        return response.status(400).json({ error: `Invalid JMeter script: ${error.message}` });
-      }
+        const scenarioResult = await pool.query('SELECT id FROM scenarios WHERE id = $1', [request.params.id]);
+        if (!scenarioResult.rowCount) {
+          await unlink(request.file.path);
+          return response.status(404).json({ error: 'Scenario not found.' });
+        }
 
-      const scriptHash = createHash('sha256').update(xml).digest('hex');
-      const client = await pool.connect();
-      let updated;
-      try {
-        await client.query('BEGIN');
-        const lockedScenario = await client.query('SELECT id FROM scenarios WHERE id = $1 FOR UPDATE', [request.params.id]);
-        if (!lockedScenario.rowCount) throw Object.assign(new Error('Scenario not found.'), { statusCode: 404 });
-        const versionResult = await client.query(
-          'SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM scenario_script_versions WHERE scenario_id = $1',
-          [request.params.id]
-        );
-        const version = Number(versionResult.rows[0].next_version);
-        await client.query(
-          `INSERT INTO scenario_script_versions (scenario_id, version, original_filename, script_path, sha256)
+        const xml = await readFile(request.file.path, 'utf8');
+        try {
+          const parsed = await parseStringPromise(xml);
+          if (!parsed.jmeterTestPlan) throw new Error('The uploaded XML is not a JMeter test plan.');
+        } catch (error) {
+          await unlink(request.file.path).catch(() => {});
+          return response.status(400).json({ error: `Invalid JMeter script: ${error.message}` });
+        }
+
+        const scriptHash = createHash('sha256').update(xml).digest('hex');
+        const client = await pool.connect();
+        let updated;
+        try {
+          await client.query('BEGIN');
+          const lockedScenario = await client.query('SELECT id FROM scenarios WHERE id = $1 FOR UPDATE', [
+            request.params.id
+          ]);
+          if (!lockedScenario.rowCount) throw Object.assign(new Error('Scenario not found.'), { statusCode: 404 });
+          const versionResult = await client.query(
+            'SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM scenario_script_versions WHERE scenario_id = $1',
+            [request.params.id]
+          );
+          const version = Number(versionResult.rows[0].next_version);
+          await client.query(
+            `INSERT INTO scenario_script_versions (scenario_id, version, original_filename, script_path, sha256)
            VALUES ($1, $2, $3, $4, $5)`,
-          [request.params.id, version, request.file.originalname, request.file.path, scriptHash]
-        );
-        updated = await client.query(
-          `UPDATE scenarios
+            [request.params.id, version, request.file.originalname, request.file.path, scriptHash]
+          );
+          updated = await client.query(
+            `UPDATE scenarios
            SET script_path = $2, original_filename = $3, script_version = $4, updated_at = now()
            WHERE id = $1
            RETURNING id, name, script_name, original_filename, script_version, users, duration_seconds, rampup_seconds,
                      (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at`,
-          [request.params.id, request.file.path, request.file.originalname, version]
-        );
-        await client.query('COMMIT');
+            [request.params.id, request.file.path, request.file.originalname, version]
+          );
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          client.release();
+        }
+        response.json(updated.rows[0]);
       } catch (error) {
-        await client.query('ROLLBACK').catch(() => {});
-        throw error;
-      } finally {
-        client.release();
+        await unlink(request.file.path).catch(() => {});
+        respondError(response, error);
       }
-      response.json(updated.rows[0]);
-    } catch (error) {
-      await unlink(request.file.path).catch(() => {});
-      respondError(response, error);
+    });
+  })
+);
+
+app.get(
+  '/api/scenarios/:id/script',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query('SELECT script_path FROM scenarios WHERE id = $1', [request.params.id]);
+    if (!result.rowCount || !result.rows[0].script_path) {
+      return response.status(404).json({ error: 'No script has been uploaded for this scenario.' });
     }
-  });
-}));
+    response.type('text/plain').send(await readFile(result.rows[0].script_path, 'utf8'));
+  })
+);
 
-app.get('/api/scenarios/:id/script', asyncHandler(async (request, response) => {
-  const result = await pool.query('SELECT script_path FROM scenarios WHERE id = $1', [request.params.id]);
-  if (!result.rowCount || !result.rows[0].script_path) {
-    return response.status(404).json({ error: 'No script has been uploaded for this scenario.' });
-  }
-  response.type('text/plain').send(await readFile(result.rows[0].script_path, 'utf8'));
-}));
+app.post(
+  '/api/scenarios/:id/runs',
+  asyncHandler(async (request, response) => {
+    const activeRuns = await pool.query("SELECT run_id FROM test_runs WHERE status IN ('starting', 'running') LIMIT 1");
+    if (activeRuns.rowCount) {
+      return response.status(409).json({ error: `Run ${activeRuns.rows[0].run_id} is already active.` });
+    }
 
-app.post('/api/scenarios/:id/runs', asyncHandler(async (request, response) => {
-  const activeRuns = await pool.query("SELECT run_id FROM test_runs WHERE status IN ('starting', 'running') LIMIT 1");
-  if (activeRuns.rowCount) {
-    return response.status(409).json({ error: `Run ${activeRuns.rows[0].run_id} is already active.` });
-  }
+    const scenarioResult = await pool.query('SELECT * FROM scenarios WHERE id = $1', [request.params.id]);
+    if (!scenarioResult.rowCount) return response.status(404).json({ error: 'Scenario not found.' });
+    const scenario = scenarioResult.rows[0];
+    if (!scenario.script_path)
+      return response.status(400).json({ error: 'Upload a JMX script before executing this scenario.' });
 
-  const scenarioResult = await pool.query('SELECT * FROM scenarios WHERE id = $1', [request.params.id]);
-  if (!scenarioResult.rowCount) return response.status(404).json({ error: 'Scenario not found.' });
-  const scenario = scenarioResult.rows[0];
-  if (!scenario.script_path) return response.status(400).json({ error: 'Upload a JMX script before executing this scenario.' });
-
-  const runId = generateRunId();
-  const resultsDir = path.join(resultsRoot, runId);
-  await mkdir(resultsDir, { recursive: true });
-  const scriptSnapshot = await readFile(scenario.script_path);
-  const scriptHash = createHash('sha256').update(scriptSnapshot).digest('hex');
-  const scriptSnapshotPath = path.join(resultsDir, 'script.jmx');
-  await writeFile(scriptSnapshotPath, scriptSnapshot);
-  let runInsert;
-  try {
-    runInsert = await pool.query(
-      `INSERT INTO test_runs
+    const runId = generateRunId();
+    const resultsDir = path.join(resultsRoot, runId);
+    await mkdir(resultsDir, { recursive: true });
+    const scriptSnapshot = await readFile(scenario.script_path);
+    const scriptHash = createHash('sha256').update(scriptSnapshot).digest('hex');
+    const scriptSnapshotPath = path.join(resultsDir, 'script.jmx');
+    await writeFile(scriptSnapshotPath, scriptSnapshot);
+    let runInsert;
+    try {
+      runInsert = await pool.query(
+        `INSERT INTO test_runs
        (run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
         users, duration_seconds, rampup_seconds, results_dir, slo)
        VALUES ($1, $2, $3, $4, $5, $6, 'starting', $7, $8, $9, $10, $11)
        RETURNING run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
                  users, duration_seconds, rampup_seconds, started_at, ended_at, exit_code, error, summary,
                  slo, slo_result`,
-      [
+        [
+          runId,
+          scenario.id,
+          scenario.name,
+          scenario.original_filename || scenario.script_name,
+          scriptHash,
+          scenario.script_version,
+          scenario.users,
+          scenario.duration_seconds,
+          scenario.rampup_seconds,
+          resultsDir,
+          scenario.slo
+        ]
+      );
+    } catch (error) {
+      if (error.code === '23505')
+        return response.status(409).json({ error: 'Another test run started at the same time.' });
+      throw error;
+    }
+
+    response.status(202).json(runInsert.rows[0]);
+
+    try {
+      const preparedJmx = await prepareJMX(scriptSnapshotPath, runId, scenario.name, resultsDir);
+      const containerId = await startJMeterInDocker(
         runId,
-        scenario.id,
+        preparedJmx,
+        influxdbUrl,
         scenario.name,
-        scenario.original_filename || scenario.script_name,
-        scriptHash,
-        scenario.script_version,
         scenario.users,
         scenario.duration_seconds,
         scenario.rampup_seconds,
-        resultsDir,
-        scenario.slo
-      ]
-    );
-  } catch (error) {
-    if (error.code === '23505') return response.status(409).json({ error: 'Another test run started at the same time.' });
-    throw error;
-  }
-
-  response.status(202).json(runInsert.rows[0]);
-
-  try {
-    const preparedJmx = await prepareJMX(scriptSnapshotPath, runId, scenario.name, resultsDir);
-    const containerId = await startJMeterInDocker(
-      runId,
-      preparedJmx,
-      influxdbUrl,
-      scenario.name,
-      scenario.users,
-      scenario.duration_seconds,
-      scenario.rampup_seconds,
-      resultsDir
-    );
-    const started = await pool.query(
-      `UPDATE test_runs SET status = 'running', container_id = $2, started_at = now()
+        resultsDir
+      );
+      const started = await pool.query(
+        `UPDATE test_runs SET status = 'running', container_id = $2, started_at = now()
        WHERE run_id = $1 AND status = 'starting' RETURNING run_id`,
-      [runId, containerId]
-    );
-    if (!started.rowCount) {
-      await stopJMeterContainer(containerId);
+        [runId, containerId]
+      );
+      if (!started.rowCount) {
+        await stopJMeterContainer(containerId);
+        monitorRunContainer(runId, containerId).catch((error) => {
+          console.error(`Aborted run cleanup failed for ${runId}: ${error.message}`);
+        });
+        return;
+      }
       monitorRunContainer(runId, containerId).catch((error) => {
-        console.error(`Aborted run cleanup failed for ${runId}: ${error.message}`);
+        console.error(`Run monitor failed for ${runId}: ${error.message}`);
       });
-      return;
+    } catch (error) {
+      await finishRun(runId, 1, error.message);
     }
-    monitorRunContainer(runId, containerId).catch((error) => {
-      console.error(`Run monitor failed for ${runId}: ${error.message}`);
-    });
-  } catch (error) {
-    await finishRun(runId, 1, error.message);
-  }
-}));
+  })
+);
 
-app.post('/api/runs/:runId/abort', asyncHandler(async (request, response) => {
-  const existing = await pool.query(
-    "SELECT status, container_id FROM test_runs WHERE run_id = $1",
-    [request.params.runId]
-  );
-  if (!existing.rowCount) return response.status(404).json({ error: 'Run not found.' });
-  if (!['starting', 'running'].includes(existing.rows[0].status)) {
-    return response.status(409).json({ error: 'Only an active run can be aborted.' });
-  }
+app.post(
+  '/api/runs/:runId/abort',
+  asyncHandler(async (request, response) => {
+    const existing = await pool.query('SELECT status, container_id FROM test_runs WHERE run_id = $1', [
+      request.params.runId
+    ]);
+    if (!existing.rowCount) return response.status(404).json({ error: 'Run not found.' });
+    if (!['starting', 'running'].includes(existing.rows[0].status)) {
+      return response.status(409).json({ error: 'Only an active run can be aborted.' });
+    }
 
-  const discoveredContainerId = existing.rows[0].container_id
-    || await findJMeterContainer(request.params.runId);
-  const aborted = await pool.query(
-    `UPDATE test_runs
+    const discoveredContainerId = existing.rows[0].container_id || (await findJMeterContainer(request.params.runId));
+    const aborted = await pool.query(
+      `UPDATE test_runs
      SET status = 'aborted', ended_at = now(), error = 'Run aborted by user.'
      WHERE run_id = $1 AND status IN ('starting', 'running')
      RETURNING status, container_id`,
-    [request.params.runId]
-  );
-  if (!aborted.rowCount) return response.status(409).json({ error: 'The run is no longer active.' });
+      [request.params.runId]
+    );
+    if (!aborted.rowCount) return response.status(409).json({ error: 'The run is no longer active.' });
 
-  const containerId = aborted.rows[0].container_id || discoveredContainerId;
-  if (containerId) await stopJMeterContainer(containerId);
-  response.json({ runId: request.params.runId, status: 'aborted' });
-}));
+    const containerId = aborted.rows[0].container_id || discoveredContainerId;
+    if (containerId) await stopJMeterContainer(containerId);
+    response.json({ runId: request.params.runId, status: 'aborted' });
+  })
+);
 
-app.get('/api/runs', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
+app.get(
+  '/api/runs',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
             users, duration_seconds, rampup_seconds,
             started_at, ended_at, exit_code, error, summary, slo, slo_result
      FROM test_runs ORDER BY started_at DESC LIMIT 100`
-  );
-  response.json(result.rows.map((run) => ({ ...run, grafanaUrl: grafanaUrl(run) })));
-}));
+    );
+    response.json(result.rows.map((run) => ({ ...run, grafanaUrl: grafanaUrl(run) })));
+  })
+);
 
-app.get('/api/runs/:runId', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
+app.get(
+  '/api/runs/:runId',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
             users, duration_seconds, rampup_seconds,
             started_at, ended_at, exit_code, error, summary, slo, slo_result
      FROM test_runs WHERE run_id = $1`,
-    [request.params.runId]
-  );
-  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
-  response.json({ ...result.rows[0], grafanaUrl: grafanaUrl(result.rows[0]) });
-}));
+      [request.params.runId]
+    );
+    if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+    response.json({ ...result.rows[0], grafanaUrl: grafanaUrl(result.rows[0]) });
+  })
+);
 
-app.get('/api/runs/:runId/results', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
+app.get(
+  '/api/runs/:runId/results',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
             users, duration_seconds, rampup_seconds, started_at, ended_at, exit_code, error, summary,
             slo, slo_result
      FROM test_runs WHERE run_id = $1`,
-    [request.params.runId]
-  );
-  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
-  const run = result.rows[0];
-  const baseline = await findMatchingBaseline(run);
-  response.json({
-    run,
-    baseline
-  });
-}));
+      [request.params.runId]
+    );
+    if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+    const run = result.rows[0];
+    const baseline = await findMatchingBaseline(run);
+    response.json({
+      run,
+      baseline
+    });
+  })
+);
 
-app.post('/api/runs/:runId/ai-analysis', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT run_id, scenario_id, script_sha256, status, users, duration_seconds, rampup_seconds, started_at, summary
+app.post(
+  '/api/runs/:runId/ai-analysis',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT run_id, scenario_id, script_sha256, status, users, duration_seconds, rampup_seconds, started_at, summary
      FROM test_runs WHERE run_id = $1`,
-    [request.params.runId]
-  );
-  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
-  const run = result.rows[0];
-  if (run.status !== 'completed' || !run.summary) {
-    return response.status(409).json({ error: 'AI analysis is available only for completed runs with a summary.' });
-  }
+      [request.params.runId]
+    );
+    if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+    const run = result.rows[0];
+    if (run.status !== 'completed' || !run.summary) {
+      return response.status(409).json({ error: 'AI analysis is available only for completed runs with a summary.' });
+    }
 
-  const baseline = await findMatchingBaseline(run);
-  const analysis = await analyzeWithOllama(run.summary, baseline?.summary);
-  response.json({
-    ...analysis,
-    baseline: baseline ? { runId: baseline.run_id, startedAt: baseline.started_at } : null
-  });
-}));
+    const baseline = await findMatchingBaseline(run);
+    const analysis = await analyzeWithOllama(run.summary, baseline?.summary);
+    response.json({
+      ...analysis,
+      baseline: baseline ? { runId: baseline.run_id, startedAt: baseline.started_at } : null
+    });
+  })
+);
 
-app.get('/api/runs/:runId/report', asyncHandler(async (request, response) => {
-  const result = await pool.query(
-    `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
+app.get(
+  '/api/runs/:runId/report',
+  asyncHandler(async (request, response) => {
+    const result = await pool.query(
+      `SELECT run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
             users, duration_seconds, rampup_seconds, started_at, ended_at, exit_code, error, summary,
             slo, slo_result
      FROM test_runs WHERE run_id = $1`,
-    [request.params.runId]
-  );
-  if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
-  const run = result.rows[0];
-  const baseline = run.summary ? await findMatchingBaseline(run) : null;
-  const html = renderRunReport({ run, baseline });
-  if (request.query.download !== undefined) {
-    const safeName = `${run.scenario_name}-${run.run_id}`.replace(/[^a-zA-Z0-9._-]/g, '_');
-    response.attachment(`perf-report-${safeName}.html`);
-  }
-  response.type('html').send(html);
-}));
+      [request.params.runId]
+    );
+    if (!result.rowCount) return response.status(404).json({ error: 'Run not found.' });
+    const run = result.rows[0];
+    const baseline = run.summary ? await findMatchingBaseline(run) : null;
+    const html = renderRunReport({ run, baseline });
+    if (request.query.download !== undefined) {
+      const safeName = `${run.scenario_name}-${run.run_id}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+      response.attachment(`perf-report-${safeName}.html`);
+    }
+    response.type('html').send(html);
+  })
+);
 
-app.get('/api/scenarios/:id/trends', asyncHandler(async (request, response) => {
-  const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 20, 1), 200);
-  const result = await pool.query(
-    `SELECT run_id, started_at, script_version, script_sha256, users, duration_seconds, rampup_seconds,
+app.get(
+  '/api/scenarios/:id/trends',
+  asyncHandler(async (request, response) => {
+    const limit = Math.min(Math.max(Number.parseInt(request.query.limit, 10) || 20, 1), 200);
+    const result = await pool.query(
+      `SELECT run_id, started_at, script_version, script_sha256, users, duration_seconds, rampup_seconds,
             summary, slo_result
      FROM test_runs
      WHERE scenario_id = $1 AND status = 'completed' AND summary IS NOT NULL
      ORDER BY started_at DESC
      LIMIT $2`,
-    [request.params.id, limit]
-  );
-  const points = result.rows.reverse().map((run) => ({
-    runId: run.run_id,
-    startedAt: run.started_at,
-    scriptVersion: run.script_version,
-    users: run.users,
-    durationSeconds: run.duration_seconds,
-    samples: run.summary.samples,
-    throughputPerSecond: run.duration_seconds ? run.summary.samples / run.duration_seconds : null,
-    errorRatePercent: run.summary.errorRatePercent,
-    averageResponseMs: run.summary.averageResponseMs,
-    p95ResponseMs: run.summary.p95ResponseMs,
-    p99ResponseMs: run.summary.p99ResponseMs,
-    sloPassed: run.slo_result ? run.slo_result.passed : null
-  }));
-  response.json({ scenarioId: request.params.id, points });
-}));
+      [request.params.id, limit]
+    );
+    const points = result.rows.reverse().map((run) => ({
+      runId: run.run_id,
+      startedAt: run.started_at,
+      scriptVersion: run.script_version,
+      users: run.users,
+      durationSeconds: run.duration_seconds,
+      samples: run.summary.samples,
+      throughputPerSecond: run.duration_seconds ? run.summary.samples / run.duration_seconds : null,
+      errorRatePercent: run.summary.errorRatePercent,
+      averageResponseMs: run.summary.averageResponseMs,
+      p95ResponseMs: run.summary.p95ResponseMs,
+      p99ResponseMs: run.summary.p99ResponseMs,
+      sloPassed: run.slo_result ? run.slo_result.passed : null
+    }));
+    response.json({ scenarioId: request.params.id, points });
+  })
+);
 
 app.get('*', (request, response) => {
   response.sendFile(path.join(publicDir, 'index.html'));
