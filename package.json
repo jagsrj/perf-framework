@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "commander": "^9.5.0",
+    "commander": "^15.0.0",
     "csv-parse": "^7.0.3",
     "express": "^4.21.2",
     "hdr-histogram-js": "^3.0.1",
