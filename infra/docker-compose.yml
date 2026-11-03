@@ -43,7 +43,7 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: perf_framework
