@@ -16,6 +16,7 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `GRAFANA_BASE_URL` | `http://localhost:3000` | Base for dashboard links |
 | `PERF_MAX_GENERATORS` | `10` | Most load generators (JMeter containers) one run may use |
 | `JMETER_IMAGE` | `perf-framework-jmeter:5.6.3` | JMeter Docker image |
+| `JMETER_DOCKER_USER` | Linux: the web app's `uid:gid`; elsewhere: the image's non-root `jmeter` user | `--user` for JMeter containers. Set `image` to never pass `--user` |
 | `JMETER_DOCKER_NETWORK` | `infra_jmeter-network` | Docker network shared with InfluxDB |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local AI analysis endpoint |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Ollama model name |

@@ -23,6 +23,8 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Unit and end-to-end tests for the MCP layer.
 
 ### Changed
+- JMeter image: the download is checked against a pinned SHA-512, curl is removed after use, and JMeter runs as a non-root user (on Linux, as the web app's own user so results stay writable) with `no-new-privileges`. **Rebuild the image** (`docker build -t perf-framework-jmeter:5.6.3 ./jmeter`).
+- Compose images pinned: `ollama/ollama:0.40.6` (was `latest`) and `influxdb:1.11` (was 1.8; it reads existing 1.8 data in place). CI builds the JMeter image and checks every Compose image tag exists.
 - `web/server.js` split into `config`, `db`, `auth`, `run-service`, `routes/` and `create-app` modules. Unknown `/api/*` paths now return a JSON 404.
 - InfluxDB is published on `127.0.0.1:8086` so live metrics can be queried from the host.
 - README reorganised into a quick start with links to detailed docs. Data-lifecycle details moved to `docs/ARCHITECTURE.md`.

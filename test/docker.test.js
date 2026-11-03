@@ -59,3 +59,18 @@ test('gives each load generator its own label, result file and log', async () =>
   assert.ok(single.includes('/results/results.jtl'));
   assert.ok(!single.some((arg) => arg.startsWith('-Jgenerator')));
 });
+
+test('runs JMeter as the host user on Linux and as the image user elsewhere', async () => {
+  const { containerUser, jmeterRunArgs } = await import('../cli/docker.js');
+  const ids = { getuid: () => 1001, getgid: () => 1002 };
+  assert.equal(containerUser({}, 'linux', ids), '1001:1002');
+  assert.equal(containerUser({}, 'darwin', ids), null);
+  assert.equal(containerUser({ JMETER_DOCKER_USER: '1000:1000' }, 'darwin', ids), '1000:1000');
+  assert.equal(containerUser({ JMETER_DOCKER_USER: 'image' }, 'linux', ids), null);
+
+  const args = jmeterRunArgs({ runId: 'r', jmxPath: '/a/b.jmx', resultsDir: '/r', threads: 1, env: {}, user: '5:6' });
+  assert.deepEqual(args.slice(args.indexOf('--user'), args.indexOf('--user') + 2), ['--user', '5:6']);
+  assert.ok(args.includes('no-new-privileges'));
+  // Docker options must come before the image name.
+  assert.ok(args.indexOf('--user') < args.indexOf('perf-framework-jmeter:5.6.3'));
+});

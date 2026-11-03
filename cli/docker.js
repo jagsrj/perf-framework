@@ -20,6 +20,16 @@ export function splitUsers(users, generators) {
   return Array.from({ length: generators }, (_, index) => base + (index < extra ? 1 : 0));
 }
 
+// The --user to run JMeter as. On Linux, bind-mounted directories keep host ownership, so the
+// container runs as the web app's own user to be able to write results. Docker Desktop
+// (macOS/Windows) maps ownership itself, so the image's non-root user is used as is.
+// JMETER_DOCKER_USER overrides this (for example "1000:1000"); set it to "image" to never pass --user.
+export function containerUser(env = process.env, platform = process.platform, ids = process) {
+  if (env.JMETER_DOCKER_USER) return env.JMETER_DOCKER_USER === 'image' ? null : env.JMETER_DOCKER_USER;
+  if (platform === 'linux' && typeof ids.getuid === 'function') return `${ids.getuid()}:${ids.getgid()}`;
+  return null;
+}
+
 export function jmeterRunArgs({
   runId,
   jmxPath,
@@ -30,7 +40,8 @@ export function jmeterRunArgs({
   rampup,
   resultsDir,
   generator = null,
-  env = process.env
+  env = process.env,
+  user = containerUser(env)
 }) {
   const scriptDir = path.dirname(path.resolve(jmxPath));
   const resultsPath = path.resolve(resultsDir);
@@ -40,7 +51,10 @@ export function jmeterRunArgs({
 
   const args = ['run', '--label', `${RUN_LABEL}=${runId}`];
   if (generator !== null) args.push('--label', `${GENERATOR_LABEL}=${generator}`);
+  if (user) args.push('--user', user);
   args.push(
+    '--security-opt',
+    'no-new-privileges',
     `--network=${dockerNetwork}`,
     '-v',
     `${scriptDir}:/scripts:ro`,
