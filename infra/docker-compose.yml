@@ -10,7 +10,7 @@ services:
 
   influxdb:
     # InfluxDB 1.x (InfluxQL). 1.11 reads data written by 1.8 in place.
-    image: influxdb:1.11
+    image: influxdb:2.9
     ports:
       # Localhost only: lets the MCP server read live metrics (get_live_metrics).
       - '127.0.0.1:8086:8086'
@@ -60,7 +60,7 @@ services:
       retries: 20
 
   influxdb-retention:
-    image: influxdb:1.11
+    image: influxdb:2.9
     networks:
       - jmeter-network
     depends_on:
