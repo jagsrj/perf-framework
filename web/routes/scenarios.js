@@ -8,9 +8,9 @@ import { asyncHandler, httpError, respondError, validateScenarioIdParam } from '
 import { normalizeSlo } from '../slo.js';
 
 const SCENARIO_COLUMNS = `id, name, script_name, original_filename, script_version, users, duration_seconds,
-  rampup_seconds, (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at`;
+  rampup_seconds, generators, (script_path IS NOT NULL) AS has_script, slo, created_at, updated_at`;
 
-export function toScenarioInput(body = {}) {
+export function toScenarioInput(body = {}, { maxGenerators = 10 } = {}) {
   const invalid = (message) => httpError(400, message);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const scriptName = typeof body.scriptName === 'string' ? body.scriptName.trim() : '';
@@ -29,10 +29,19 @@ export function toScenarioInput(body = {}) {
   if (!Number.isSafeInteger(rampup) || rampup < 0 || rampup > duration) {
     throw invalid('Ramp-up must be a whole number between 0 and the test duration.');
   }
+  // generators is optional: omitted = 1 for a new scenario, unchanged for an update.
+  let generators = null;
+  if (body.generators !== undefined && body.generators !== null && body.generators !== '') {
+    generators = Number(body.generators);
+    if (!Number.isSafeInteger(generators) || generators < 1 || generators > maxGenerators) {
+      throw invalid(`Load generators must be a whole number between 1 and ${maxGenerators}.`);
+    }
+    if (generators > users) throw invalid('Load generators cannot exceed the number of users.');
+  }
   // slo is optional: omitted = keep the current targets, null/{} = clear them.
   const hasSlo = Object.prototype.hasOwnProperty.call(body, 'slo');
   const slo = hasSlo ? normalizeSlo(body.slo) : null;
-  return { name, scriptName, users, duration, rampup, hasSlo, slo };
+  return { name, scriptName, users, duration, rampup, generators, hasSlo, slo };
 }
 
 export function scenariosRouter({ pool, runs, config }) {
@@ -68,10 +77,10 @@ export function scenariosRouter({ pool, runs, config }) {
   router.post(
     '/',
     asyncHandler(async (request, response) => {
-      const scenario = toScenarioInput(request.body);
+      const scenario = toScenarioInput(request.body, config);
       const result = await pool.query(
-        `INSERT INTO scenarios (id, name, script_name, users, duration_seconds, rampup_seconds, slo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO scenarios (id, name, script_name, users, duration_seconds, rampup_seconds, slo, generators)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING ${SCENARIO_COLUMNS}`,
         [
           randomUUID(),
@@ -80,7 +89,8 @@ export function scenariosRouter({ pool, runs, config }) {
           scenario.users,
           scenario.duration,
           scenario.rampup,
-          scenario.slo
+          scenario.slo,
+          scenario.generators ?? 1
         ]
       );
       response.status(201).json(result.rows[0]);
@@ -90,24 +100,33 @@ export function scenariosRouter({ pool, runs, config }) {
   router.put(
     '/:id',
     asyncHandler(async (request, response) => {
-      const scenario = toScenarioInput(request.body);
-      const result = await pool.query(
-        `UPDATE scenarios
-         SET name = $2, script_name = $3, users = $4, duration_seconds = $5, rampup_seconds = $6,
-             slo = CASE WHEN $7::boolean THEN $8::jsonb ELSE slo END, updated_at = now()
-         WHERE id = $1
-         RETURNING ${SCENARIO_COLUMNS}`,
-        [
-          request.params.id,
-          scenario.name,
-          scenario.scriptName,
-          scenario.users,
-          scenario.duration,
-          scenario.rampup,
-          scenario.hasSlo,
-          scenario.slo
-        ]
-      );
+      const scenario = toScenarioInput(request.body, config);
+      const result = await pool
+        .query(
+          `UPDATE scenarios
+           SET name = $2, script_name = $3, users = $4, duration_seconds = $5, rampup_seconds = $6,
+               slo = CASE WHEN $7::boolean THEN $8::jsonb ELSE slo END,
+               generators = COALESCE($9, generators), updated_at = now()
+           WHERE id = $1
+           RETURNING ${SCENARIO_COLUMNS}`,
+          [
+            request.params.id,
+            scenario.name,
+            scenario.scriptName,
+            scenario.users,
+            scenario.duration,
+            scenario.rampup,
+            scenario.hasSlo,
+            scenario.slo,
+            scenario.generators
+          ]
+        )
+        .catch((error) => {
+          if (error.constraint === 'scenarios_generators_le_users') {
+            throw httpError(400, 'Load generators cannot exceed the number of users.');
+          }
+          throw error;
+        });
       if (!result.rowCount) throw httpError(404, 'Scenario not found.');
       response.json(result.rows[0]);
     })

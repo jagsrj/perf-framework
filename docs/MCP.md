@@ -30,7 +30,7 @@ You can keep using the web UI at the same time. Both drive the same engine and d
 | `check_health` | Web app and database reachable; shows guardrail limits | No |
 | `list_scenarios` | Scenarios with load settings and script status | No |
 | `get_script` | Current JMX for a scenario | No |
-| `create_scenario` | New scenario (name, script name, users, duration, ramp-up, optional SLO targets) | Yes |
+| `create_scenario` | New scenario (name, script name, users, duration, ramp-up, optional load generators and SLO targets) | Yes |
 | `update_scenario` | Change only the fields you pass, including SLO targets (`slo: null` clears them) | Yes |
 | `upload_script` | Upload JMX from text (`jmxContent`) or a file (`filePath`) as a new version | Yes |
 | `run_scenario` | Start a run with the scenario's saved settings | Yes |

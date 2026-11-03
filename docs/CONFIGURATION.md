@@ -14,6 +14,7 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `DATABASE_URL` | `postgres://perf_framework:<password>@localhost:5433/perf_framework` | Full PostgreSQL connection string |
 | `INFLUXDB_URL` | `http://influxdb:8086/write?db=jmeter` | Where JMeter (inside Docker) writes live metrics |
 | `GRAFANA_BASE_URL` | `http://localhost:3000` | Base for dashboard links |
+| `PERF_MAX_GENERATORS` | `10` | Most load generators (JMeter containers) one run may use |
 | `JMETER_IMAGE` | `perf-framework-jmeter:5.6.3` | JMeter Docker image |
 | `JMETER_DOCKER_NETWORK` | `infra_jmeter-network` | Docker network shared with InfluxDB |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Local AI analysis endpoint |

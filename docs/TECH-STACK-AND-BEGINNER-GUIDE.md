@@ -4,7 +4,7 @@ This guide explains the technologies used by the current application, how they f
 
 For a more visual, browser-friendly presentation of this guide, open [tech-stack-and-beginner-guide.html](./tech-stack-and-beginner-guide.html).
 
-The current implementation is a **local, single-host JMeter runner**. It is not yet a distributed load-testing platform.
+The current implementation runs on **one Docker host**. A run can split its users across several JMeter containers (load generators) on that host; spreading generators across several machines is the next step.
 
 ## 1. What the application does
 
@@ -43,9 +43,9 @@ Node.js + Express web application (localhost:4000)
                     └── Grafana dashboard (localhost:3000)
 ```
 
-Docker Desktop runs the PostgreSQL, InfluxDB, Grafana, and Ollama services. The Node.js application runs directly on the host. For each web run, the application asks Docker to start one JMeter container, mounts the prepared script and results directory, and then monitors the container.
+Docker Desktop runs the PostgreSQL, InfluxDB, Grafana, and Ollama services. The Node.js application runs directly on the host. For each web run, the application asks Docker to start one JMeter container per load generator (one by default), mounts the prepared script and results directory, and then monitors the containers.
 
-Only one web-managed run may be active at a time. Remote worker registration and distributed execution are not implemented.
+Only one web-managed run may be active at a time. Load generators run on the same Docker host; remote worker registration is not implemented yet.
 
 ## 3. Technology stack
 

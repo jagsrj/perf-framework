@@ -39,7 +39,7 @@ function createFakeDocker() {
     ],
     async start(options) {
       const id = `fake-${++counter}`;
-      await writeFile(path.join(options.resultsDir, 'results.jtl'), jtl(fake.jtlRows));
+      await writeFile(path.join(options.resultsDir, `results-${options.generator}.jtl`), jtl(fake.jtlRows));
       let resolveExit;
       const exited = new Promise((resolve) => {
         resolveExit = resolve;
@@ -54,7 +54,7 @@ function createFakeDocker() {
       containers.get(id)?.resolveExit(143);
     },
     remove: async () => {},
-    find: async (runId) => [...containers].find(([, c]) => c.options.runId === runId)?.[0] ?? null,
+    find: async (runId) => [...containers].filter(([, c]) => c.options.runId === runId).map(([id]) => id),
     finish(exitCode = 0, index = fake.started.length - 1) {
       containers.get(fake.started[index].id).resolveExit(exitCode);
     }
@@ -275,7 +275,10 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
     assert.equal(run.summary.failures, 1);
     assert.equal(run.slo_result.passed, true);
     assert.match(run.grafanaUrl, /var-runId=/);
-    assert.equal(docker.started[0].users, 10);
+    assert.equal(docker.started.length, 1);
+    assert.equal(docker.started[0].threads, 10);
+    assert.equal(docker.started[0].generator, 1);
+    assert.equal(run.generators, 1);
 
     const report = await call('GET', `/api/runs/${run.run_id}/report`);
     assert.equal(report.status, 200);
@@ -334,5 +337,98 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
     assert.equal((await call('POST', `/api/runs/${started.body.run_id}/abort`)).status, 409);
     assert.equal((await call('POST', '/api/runs/no-such-run/abort')).status, 404);
     assert.equal((await call('GET', '/api/runs/no-such-run')).status, 404);
+  });
+
+  test('validates load generators on create and update', async (t) => {
+    t.after(cleanup);
+    const base = { name: 'a', scriptName: 'x.jmx', users: 5, duration: 60, rampup: 0 };
+    assert.equal((await call('POST', '/api/scenarios', { ...base, generators: 6 })).status, 400, 'more than users');
+    assert.equal(
+      (await call('POST', '/api/scenarios', { ...base, users: 500, generators: 11 })).status,
+      400,
+      'over max'
+    );
+    assert.equal((await call('POST', '/api/scenarios', { ...base, generators: 0 })).status, 400);
+
+    const scenario = await createScenario({ users: 10, generators: 3 });
+    assert.equal(scenario.generators, 3);
+    const kept = await call('PUT', `/api/scenarios/${scenario.id}`, { ...base, users: 10 });
+    assert.equal(kept.body.generators, 3, 'omitting generators keeps the current value');
+    const shrunk = await call('PUT', `/api/scenarios/${scenario.id}`, { ...base, users: 2 });
+    assert.equal(shrunk.status, 400, 'users cannot drop below the generator count');
+    assert.match(shrunk.body.error, /generators/);
+    assert.equal((await createScenario()).generators, 1, 'defaults to one generator');
+  });
+
+  test('splits users across load generators and merges their results', async (t) => {
+    t.after(cleanup);
+    const scenario = await createScenario({ users: 10, generators: 3, slo: { p95Ms: 1000, errorRatePercent: 50 } });
+    await uploadScript(scenario.id);
+    const started = await call('POST', `/api/scenarios/${scenario.id}/runs`);
+    assert.equal(started.body.generators, 3);
+    await waitForContainer(3);
+    const running = await waitForStatus(started.body.run_id, ['running']);
+    assert.equal(running.generators, 3);
+
+    assert.deepEqual(
+      docker.started.map((c) => c.threads),
+      [4, 3, 3]
+    );
+    assert.deepEqual(
+      docker.started.map((c) => c.generator),
+      [1, 2, 3]
+    );
+    assert.ok(docker.started.every((c) => c.runId === started.body.run_id && c.duration === 60));
+
+    docker.finish(0, 0);
+    docker.finish(0, 1);
+    assert.equal((await call('GET', `/api/runs/${started.body.run_id}`)).body.status, 'running', 'waits for all');
+    docker.finish(0, 2);
+    const run = await waitForStatus(started.body.run_id, ['completed', 'failed']);
+    assert.equal(run.status, 'completed', run.error);
+    assert.equal(run.summary.samples, 9, 'three generators x three samples');
+    assert.equal(run.summary.transactions.login.samples, 6);
+    assert.equal(run.slo_result.passed, true);
+  });
+
+  test('stops the other generators when one fails', async (t) => {
+    t.after(cleanup);
+    const scenario = await createScenario({ users: 4, generators: 2 });
+    await uploadScript(scenario.id);
+    const started = await call('POST', `/api/scenarios/${scenario.id}/runs`);
+    await waitForContainer(2);
+    await waitForStatus(started.body.run_id, ['running']);
+    docker.finish(1, 0);
+    const run = await waitForStatus(started.body.run_id, ['completed', 'failed']);
+    assert.equal(run.status, 'failed');
+    assert.match(run.error, /load generator exited with code 1/);
+    assert.deepEqual(docker.stopped, [docker.started[1].id]);
+  });
+
+  test('aborting a distributed run stops every generator', async (t) => {
+    t.after(cleanup);
+    const scenario = await createScenario({ users: 6, generators: 3 });
+    await uploadScript(scenario.id);
+    const started = await call('POST', `/api/scenarios/${scenario.id}/runs`);
+    await waitForContainer(3);
+    await waitForStatus(started.body.run_id, ['running']);
+    assert.equal((await call('POST', `/api/runs/${started.body.run_id}/abort`)).status, 200);
+    assert.deepEqual(docker.stopped.slice(0, 3).sort(), docker.started.map((c) => c.id).sort());
+    await waitForStatus(started.body.run_id, ['aborted']);
+  });
+
+  test('fails the run cleanly if a generator cannot start', async (t) => {
+    t.after(cleanup);
+    const scenario = await createScenario({ users: 4, generators: 2 });
+    await uploadScript(scenario.id);
+    const realStart = docker.start;
+    docker.start = async (options) => {
+      if (options.generator === 2) throw new Error('docker: image not found');
+      return realStart(options);
+    };
+    const started = await call('POST', `/api/scenarios/${scenario.id}/runs`);
+    const run = await waitForStatus(started.body.run_id, ['failed']);
+    assert.match(run.error, /image not found/);
+    assert.deepEqual(docker.stopped, [docker.started[0].id], 'the generator that did start is stopped');
   });
 });

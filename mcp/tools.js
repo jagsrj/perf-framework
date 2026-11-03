@@ -49,9 +49,16 @@ function toScenarioBody(scenario) {
     scriptName: scenario.script_name,
     users: scenario.users,
     duration: scenario.duration_seconds,
-    rampup: scenario.rampup_seconds
+    rampup: scenario.rampup_seconds,
+    generators: scenario.generators ?? 1
   };
 }
+
+const generatorsSchema = z
+  .number()
+  .int()
+  .min(1)
+  .describe('Load generators: how many JMeter containers share the users (default 1). Cannot exceed users.');
 
 export function registerTools(server, { api, influx, config }) {
   const readOnly = { readOnlyHint: true, openWorldHint: false };
@@ -121,6 +128,7 @@ export function registerTools(server, { api, influx, config }) {
         users: z.number().int().min(1).describe('Virtual users (threads).'),
         duration: z.number().int().min(1).describe('Test duration in seconds.'),
         rampup: z.number().int().min(0).describe('Ramp-up in seconds (must not exceed duration).'),
+        generators: generatorsSchema.optional(),
         slo: sloSchema.optional()
       }
     },
@@ -143,6 +151,7 @@ export function registerTools(server, { api, influx, config }) {
         users: z.number().int().min(1).optional(),
         duration: z.number().int().min(1).optional(),
         rampup: z.number().int().min(0).optional(),
+        generators: generatorsSchema.optional(),
         slo: sloSchema.nullable().optional()
       },
       annotations: { idempotentHint: true }

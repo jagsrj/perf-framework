@@ -23,6 +23,8 @@ export function loadConfig(env = process.env) {
     publicDir: path.join(projectRoot, 'web', 'public'),
     uploadRoot: env.PERF_UPLOAD_DIR || path.join(projectRoot, 'data', 'scripts'),
     resultsRoot: env.PERF_RESULTS_DIR || path.join(projectRoot, 'results'),
+    // Upper limit for load generators (JMeter containers) per run.
+    maxGenerators: Number(env.PERF_MAX_GENERATORS || 10),
     influxdbUrl: env.INFLUXDB_URL || 'http://influxdb:8086/write?db=jmeter',
     grafanaBaseUrl: env.GRAFANA_BASE_URL || 'http://localhost:3000',
     databaseUrl:

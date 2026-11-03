@@ -30,12 +30,14 @@ Create/update body:
 
 ```json
 {
-  "name": "login-smoke", "scriptName": "login.jmx", "users": 10, "duration": 300, "rampup": 30,
+  "name": "login-smoke", "scriptName": "login.jmx", "users": 10, "duration": 300, "rampup": 30, "generators": 2,
   "slo": { "p95Ms": 800, "errorRatePercent": 1, "applyToTransactions": true }
 }
 ```
 
 Validation: name ≤ 120 characters, script name ≤ 255, users 1–100000, duration 1–86400 seconds, ramp-up 0–duration. `:id` must be a UUID.
+
+`generators` is optional: the number of JMeter containers that share the users (1 to `PERF_MAX_GENERATORS`, default limit 10, and never more than `users`). New scenarios default to 1; on `PUT`, leaving it out keeps the current value. Runs record the `generators` they used.
 
 `slo` is optional. The allowed targets are `p95Ms`, `p99Ms`, `averageMs`, `maxMs` and `errorRatePercent` (0–100), plus `applyToTransactions`. On `PUT`, leaving out `slo` keeps the current targets, and `"slo": null` removes them. Unknown keys are rejected with `400`. Scenario responses include `slo`.
 

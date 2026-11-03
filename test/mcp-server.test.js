@@ -202,7 +202,8 @@ test('update_scenario is blocked above the guardrail and passes through otherwis
     scriptName: 'login.jmx',
     users: 80,
     duration: 300,
-    rampup: 30
+    rampup: 30,
+    generators: 1
   });
 });
 

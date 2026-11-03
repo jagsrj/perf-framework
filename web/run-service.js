@@ -3,12 +3,13 @@
 
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  findJMeterContainer,
+  findJMeterContainers,
   removeJMeterContainer,
-  startJMeterInDocker,
+  splitUsers,
+  startJMeterContainer,
   stopJMeterContainer,
   waitForJMeterContainer
 } from '../cli/docker.js';
@@ -17,19 +18,32 @@ import { generateRunId } from '../cli/run-id.js';
 import { httpError } from './http.js';
 import { notificationSettings, sendRunNotification } from './notify.js';
 import { evaluateSlo } from './slo.js';
-import { summarizeJtlStream } from './summary.js';
+import { summarizeJtlStreams } from './summary.js';
 
 export const RUN_COLUMNS = `run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
-  users, duration_seconds, rampup_seconds, started_at, ended_at, exit_code, error, summary, slo, slo_result`;
+  users, duration_seconds, rampup_seconds, generators, started_at, ended_at, exit_code, error, summary, slo, slo_result`;
 
+// results.jtl (single container, older runs) or results-<n>.jtl (one per load generator).
+const JTL_FILE = /^results(?:-\d+)?\.jtl$/;
+
+// start(options) -> containerId; find(runId) -> containerId[]
 export const defaultDocker = {
-  start: ({ runId, jmxPath, influxdbUrl, testName, users, duration, rampup, resultsDir }) =>
-    startJMeterInDocker(runId, jmxPath, influxdbUrl, testName, users, duration, rampup, resultsDir),
+  start: startJMeterContainer,
   wait: waitForJMeterContainer,
   stop: stopJMeterContainer,
   remove: removeJMeterContainer,
-  find: findJMeterContainer
+  find: findJMeterContainers
 };
+
+async function summarizeResults(resultsDir) {
+  const files = (await readdir(resultsDir)).filter((file) => JTL_FILE.test(file)).sort();
+  if (!files.length) throw new Error('JMeter did not write any JTL results.');
+  // Open each file only when it is read, so a failure part-way does not leak handles.
+  function* streams() {
+    for (const file of files) yield createReadStream(path.join(resultsDir, file));
+  }
+  return summarizeJtlStreams(streams());
+}
 
 export function createRunService({ pool, config, docker = defaultDocker, notify = sendRunNotification }) {
   const notifications = notificationSettings();
@@ -63,7 +77,7 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     let summary = null;
     let failure = errorMessage;
     try {
-      summary = await summarizeJtlStream(createReadStream(path.join(runResult.rows[0].results_dir, 'results.jtl')));
+      summary = await summarizeResults(runResult.rows[0].results_dir);
     } catch (error) {
       failure = failure || `Could not read JTL results: ${error.message}`;
     }
@@ -95,50 +109,80 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     }
   }
 
-  async function monitorRunContainer(runId, containerId) {
-    let exitCode;
+  // Waits for every container of a run. If one load generator fails, the others are stopped
+  // so a broken run does not keep generating partial load.
+  async function monitorRunContainers(runId, containerIds) {
+    let exitCode = 0;
     let errorMessage = null;
-    try {
-      exitCode = await docker.wait(containerId);
-      if (exitCode !== 0) errorMessage = `JMeter container exited with code ${exitCode}.`;
-    } catch (error) {
-      exitCode = 1;
-      errorMessage = `Could not monitor JMeter container: ${error.message}`;
-    }
+    const several = containerIds.length > 1;
+    await Promise.all(
+      containerIds.map(async (containerId) => {
+        let code;
+        try {
+          code = await docker.wait(containerId);
+        } catch (error) {
+          code = 1;
+          errorMessage ??= `Could not monitor JMeter container: ${error.message}`;
+        }
+        if (code !== 0 && exitCode === 0) {
+          exitCode = code;
+          errorMessage ??= several
+            ? `A load generator exited with code ${code}; the other generators were stopped.`
+            : `JMeter container exited with code ${code}.`;
+          await Promise.all(
+            containerIds.filter((other) => other !== containerId).map((other) => docker.stop(other).catch(() => {}))
+          );
+        }
+      })
+    );
     try {
       await finishRun(runId, exitCode, errorMessage);
     } finally {
-      await pool.query('UPDATE test_runs SET container_id = NULL WHERE run_id = $1', [runId]);
-      await docker.remove(containerId).catch((error) => {
-        console.error(`Could not remove completed container ${containerId}: ${error.message}`);
-      });
+      await pool.query("UPDATE test_runs SET container_ids = '{}' WHERE run_id = $1", [runId]);
+      for (const containerId of containerIds) {
+        await docker.remove(containerId).catch((error) => {
+          console.error(`Could not remove completed container ${containerId}: ${error.message}`);
+        });
+      }
     }
   }
 
   async function launch(run, scenario, scriptSnapshotPath) {
+    const containerIds = [];
     try {
       const preparedJmx = await prepareJMX(scriptSnapshotPath, run.run_id, scenario.name, run.results_dir);
-      const containerId = await docker.start({
-        runId: run.run_id,
-        jmxPath: preparedJmx,
-        influxdbUrl: config.influxdbUrl,
-        testName: scenario.name,
-        users: scenario.users,
-        duration: scenario.duration_seconds,
-        rampup: scenario.rampup_seconds,
-        resultsDir: run.results_dir
-      });
+      const shares = splitUsers(run.users, run.generators);
+      for (const [index, threads] of shares.entries()) {
+        containerIds.push(
+          await docker.start({
+            runId: run.run_id,
+            jmxPath: preparedJmx,
+            influxdbUrl: config.influxdbUrl,
+            testName: scenario.name,
+            threads,
+            duration: run.duration_seconds,
+            rampup: run.rampup_seconds,
+            resultsDir: run.results_dir,
+            generator: index + 1
+          })
+        );
+      }
       const started = await pool.query(
-        `UPDATE test_runs SET status = 'running', container_id = $2, started_at = now()
+        `UPDATE test_runs SET status = 'running', container_ids = $2, started_at = now()
          WHERE run_id = $1 AND status = 'starting' RETURNING run_id`,
-        [run.run_id, containerId]
+        [run.run_id, containerIds]
       );
       if (!started.rowCount) {
-        // Aborted while the container was starting.
-        await docker.stop(containerId);
+        // Aborted while the containers were starting.
+        await Promise.all(containerIds.map((id) => docker.stop(id).catch(() => {})));
       }
-      await monitorRunContainer(run.run_id, containerId);
+      await monitorRunContainers(run.run_id, containerIds);
     } catch (error) {
+      // A generator failed to start: clean up the ones that did.
+      for (const id of containerIds) {
+        await docker.stop(id).catch(() => {});
+        await docker.remove(id).catch(() => {});
+      }
       await finishRun(run.run_id, 1, error.message);
     }
   }
@@ -153,6 +197,15 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     if (!scenarioResult.rowCount) throw httpError(404, 'Scenario not found.');
     const scenario = scenarioResult.rows[0];
     if (!scenario.script_path) throw httpError(400, 'Upload a JMX script before executing this scenario.');
+    const generators = scenario.generators ?? 1;
+    if (generators > config.maxGenerators) {
+      throw httpError(400, `This scenario uses ${generators} load generators; the limit is ${config.maxGenerators}.`);
+    }
+    try {
+      splitUsers(scenario.users, generators);
+    } catch (error) {
+      throw httpError(400, error.message);
+    }
 
     const runId = generateRunId();
     const resultsDir = path.join(config.resultsRoot, runId);
@@ -167,8 +220,8 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
       inserted = await pool.query(
         `INSERT INTO test_runs
          (run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
-          users, duration_seconds, rampup_seconds, results_dir, slo)
-         VALUES ($1, $2, $3, $4, $5, $6, 'starting', $7, $8, $9, $10, $11)
+          users, duration_seconds, rampup_seconds, results_dir, slo, generators)
+         VALUES ($1, $2, $3, $4, $5, $6, 'starting', $7, $8, $9, $10, $11, $12)
          RETURNING ${RUN_COLUMNS}, results_dir`,
         [
           runId,
@@ -181,7 +234,8 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
           scenario.duration_seconds,
           scenario.rampup_seconds,
           resultsDir,
-          scenario.slo
+          scenario.slo,
+          generators
         ]
       );
     } catch (error) {
@@ -197,24 +251,25 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
   }
 
   async function abortRun(runId) {
-    const existing = await pool.query('SELECT status, container_id FROM test_runs WHERE run_id = $1', [runId]);
+    const existing = await pool.query('SELECT status, container_ids FROM test_runs WHERE run_id = $1', [runId]);
     if (!existing.rowCount) throw httpError(404, 'Run not found.');
     if (!['starting', 'running'].includes(existing.rows[0].status)) {
       throw httpError(409, 'Only an active run can be aborted.');
     }
 
-    const discoveredContainerId = existing.rows[0].container_id || (await docker.find(runId));
+    const knownIds = existing.rows[0].container_ids;
+    const discoveredIds = knownIds.length ? knownIds : await docker.find(runId);
     const aborted = await pool.query(
       `UPDATE test_runs
        SET status = 'aborted', ended_at = now(), error = 'Run aborted by user.'
        WHERE run_id = $1 AND status IN ('starting', 'running')
-       RETURNING status, container_id`,
+       RETURNING status, container_ids`,
       [runId]
     );
     if (!aborted.rowCount) throw httpError(409, 'The run is no longer active.');
 
-    const containerId = aborted.rows[0].container_id || discoveredContainerId;
-    if (containerId) await docker.stop(containerId);
+    const containerIds = aborted.rows[0].container_ids.length ? aborted.rows[0].container_ids : discoveredIds;
+    await Promise.all(containerIds.map((id) => docker.stop(id)));
     return { runId, status: 'aborted' };
   }
 
@@ -224,16 +279,16 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     );
     for (const run of activeRuns.rows) {
       try {
-        const containerId = await docker.find(run.run_id);
-        if (!containerId) {
+        const containerIds = await docker.find(run.run_id);
+        if (!containerIds.length) {
           await finishRun(run.run_id, 1, 'No matching JMeter container was found during application recovery.');
           continue;
         }
-        await pool.query("UPDATE test_runs SET status = 'running', container_id = $2 WHERE run_id = $1", [
+        await pool.query("UPDATE test_runs SET status = 'running', container_ids = $2 WHERE run_id = $1", [
           run.run_id,
-          containerId
+          containerIds
         ]);
-        monitorRunContainer(run.run_id, containerId).catch((error) => {
+        monitorRunContainers(run.run_id, containerIds).catch((error) => {
           console.error(`Run recovery failed for ${run.run_id}: ${error.message}`);
         });
       } catch (error) {

@@ -92,8 +92,7 @@ export function summarizeJtl(csvText) {
   return collector.finish();
 }
 
-export async function summarizeJtlStream(readable) {
-  const collector = createCollector();
+async function consumeJtl(readable, collector) {
   const parser = parseStream({ columns: true, skip_empty_lines: true, bom: true });
   try {
     const consume = (async () => {
@@ -107,5 +106,16 @@ export async function summarizeJtlStream(readable) {
     parser.destroy();
     throw error;
   }
+}
+
+export async function summarizeJtlStream(readable) {
+  return summarizeJtlStreams([readable]);
+}
+
+// One combined summary for several JTL files, e.g. one per load generator. Percentiles are
+// computed over all samples together, not averaged per file.
+export async function summarizeJtlStreams(readables) {
+  const collector = createCollector();
+  for (const readable of readables) await consumeJtl(readable, collector);
   return collector.finish();
 }

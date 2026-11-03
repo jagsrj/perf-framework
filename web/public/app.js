@@ -159,7 +159,7 @@ function renderScenarios() {
           (scenario) => `
     <article class="scenario-card">
       <div class="card-title">${escapeHtml(scenario.name)}<span class="status">${scenario.has_script ? 'Script ready' : 'Needs script'}</span></div>
-      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>${escapeHtml(sloText(scenario.slo))}</div>
+      <div class="card-meta">${escapeHtml(scenario.script_name)}${scenario.has_script ? ` · Script v${scenario.script_version}` : ''} · ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>${escapeHtml(sloText(scenario.slo))}</div>
       <div class="card-actions">
         <button class="quiet" data-edit="${escapeHtml(scenario.id)}">Update</button>
         <button class="secondary" data-run="${escapeHtml(scenario.id)}" ${scenario.has_script ? '' : 'disabled'}>Execute</button>
@@ -185,6 +185,7 @@ function setForm(form, scenario) {
   form.elements.users.value = scenario.users;
   form.elements.duration.value = scenario.duration_seconds;
   form.elements.rampup.value = scenario.rampup_seconds;
+  form.elements.generators.value = scenario.generators ?? 1;
   setSloFields(form, scenario.slo);
 }
 
@@ -227,7 +228,7 @@ function renderExecuteDetails() {
     ? `
     <strong>${escapeHtml(scenario.name)}</strong><br>
     Script: ${escapeHtml(scenario.original_filename || scenario.script_name)}${scenario.has_script ? ` · version ${scenario.script_version}` : ''}<br>
-    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up<br>
+    Load: ${scenario.users} users · ${scenario.duration_seconds}s duration · ${scenario.rampup_seconds}s ramp-up${(scenario.generators ?? 1) > 1 ? ` · ${scenario.generators} load generators` : ''}<br>
     ${escapeHtml(sloText(scenario.slo))}
     ${scenario.has_script ? '' : '<br><span class="status failed">Upload a script before running</span>'}
   `
@@ -248,6 +249,7 @@ async function saveCreateScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
+      generators: form.get('generators'),
       slo: sloFromForm(createForm)
     })
   });
@@ -292,6 +294,7 @@ async function saveUpdatedScenario(event) {
       users: form.get('users'),
       duration: form.get('duration'),
       rampup: form.get('rampup'),
+      generators: form.get('generators'),
       slo: sloFromForm(event.currentTarget)
     })
   });
@@ -423,7 +426,7 @@ function renderRunDetails(run) {
       Script: ${escapeHtml(run.script_name || 'unknown')} · version ${run.script_version ?? 'unknown'} · SHA-256: ${escapeHtml((run.script_sha256 || '').slice(0, 16))}…<br>
       Test start time: ${isActive && run.status === 'starting' ? 'Waiting for JMeter to start' : new Date(run.started_at).toLocaleString()} · Ended: ${escapeHtml(ended)}<br>
       Time remaining: <strong id="time-left" data-status="${escapeHtml(run.status)}" data-started-at="${escapeHtml(run.started_at)}" data-duration="${escapeHtml(run.duration_seconds)}"></strong><br>
-      Configured load: ${run.users} users · ${run.duration_seconds}s · ${run.rampup_seconds}s ramp-up
+      Configured load: ${run.users} users · ${run.duration_seconds}s · ${run.rampup_seconds}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${run.generators} load generators` : ''}
       ${run.error ? `<br><span class="status failed">${escapeHtml(run.error)}</span>` : ''}
     </div>
     <div class="runtime-actions">
