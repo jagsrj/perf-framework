@@ -1,9 +1,11 @@
-// Test-run lifecycle: start JMeter, watch it, record the result, abort, and recover after a restart.
-// Docker access is injected (see defaultDocker) so the API tests can run without Docker.
+// Test-run lifecycle: snapshot the bundle, start JMeter (local Docker containers or remote load
+// generators), watch it, record the result, abort, and recover after a restart.
+// Both executors share one interface (start/wait/stop/remove/find) and are injected so the API
+// tests can run without Docker or real agents.
 
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   findJMeterContainers,
@@ -16,12 +18,15 @@ import {
 import { prepareJMX } from '../cli/jmx.js';
 import { generateRunId } from '../cli/run-id.js';
 import { httpError } from './http.js';
+import { startLiveSloWatcher } from './live-slo.js';
 import { notificationSettings, sendRunNotification } from './notify.js';
+import { copyPlugins, sharedPaths, snapshotSharedBundle } from './shared-drive.js';
 import { evaluateSlo } from './slo.js';
 import { summarizeJtlStreams } from './summary.js';
 
 export const RUN_COLUMNS = `run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
-  users, duration_seconds, rampup_seconds, generators, started_at, ended_at, exit_code, error, summary, slo, slo_result`;
+  users, duration_seconds, rampup_seconds, generators, execution, script_source, plugins, aborted_by,
+  started_at, ended_at, exit_code, error, summary, slo, slo_result`;
 
 // results.jtl (single container, older runs) or results-<n>.jtl (one per load generator).
 const JTL_FILE = /^results(?:-\d+)?\.jtl$/;
@@ -45,7 +50,13 @@ async function summarizeResults(resultsDir) {
   return summarizeJtlStreams(streams());
 }
 
-export function createRunService({ pool, config, docker = defaultDocker, notify = sendRunNotification }) {
+export function createRunService({
+  pool,
+  config,
+  docker = defaultDocker,
+  agents = null,
+  notify = sendRunNotification
+}) {
   const notifications = notificationSettings();
 
   async function findMatchingBaseline(run) {
@@ -109,20 +120,26 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     }
   }
 
-  // Waits for every container of a run. If one load generator fails, the others are stopped
+  function executorFor(execution) {
+    if (execution !== 'agents') return docker;
+    if (!agents) throw new Error('Remote load generators are not configured on this controller.');
+    return agents.executor;
+  }
+
+  // Waits for every container / remote generator of a run. If one fails, the others are stopped
   // so a broken run does not keep generating partial load.
-  async function monitorRunContainers(runId, containerIds) {
+  async function monitorRun(runId, handles, executor) {
     let exitCode = 0;
     let errorMessage = null;
-    const several = containerIds.length > 1;
+    const several = handles.length > 1;
     await Promise.all(
-      containerIds.map(async (containerId) => {
+      handles.map(async (handle) => {
         let code;
         try {
-          code = await docker.wait(containerId);
+          code = await executor.wait(handle);
         } catch (error) {
           code = 1;
-          errorMessage ??= `Could not monitor JMeter container: ${error.message}`;
+          errorMessage ??= error.userMessage || `Could not monitor JMeter container: ${error.message}`;
         }
         if (code !== 0 && exitCode === 0) {
           exitCode = code;
@@ -130,7 +147,7 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
             ? `A load generator exited with code ${code}; the other generators were stopped.`
             : `JMeter container exited with code ${code}.`;
           await Promise.all(
-            containerIds.filter((other) => other !== containerId).map((other) => docker.stop(other).catch(() => {}))
+            handles.filter((other) => other !== handle).map((other) => executor.stop(other).catch(() => {}))
           );
         }
       })
@@ -139,51 +156,99 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
       await finishRun(runId, exitCode, errorMessage);
     } finally {
       await pool.query("UPDATE test_runs SET container_ids = '{}' WHERE run_id = $1", [runId]);
-      for (const containerId of containerIds) {
-        await docker.remove(containerId).catch((error) => {
-          console.error(`Could not remove completed container ${containerId}: ${error.message}`);
+      for (const handle of handles) {
+        await executor.remove(handle).catch((error) => {
+          console.error(`Could not remove completed container ${handle}: ${error.message}`);
         });
       }
     }
   }
 
-  async function launch(run, scenario, scriptSnapshotPath) {
-    const containerIds = [];
+  function watchSlo(run, startedAt) {
+    return startLiveSloWatcher({
+      runId: run.run_id,
+      resultsDir: run.results_dir,
+      slo: run.slo,
+      startedAt,
+      config,
+      onBreach: (reason) =>
+        abortRun(run.run_id, { by: 'slo', reason }).catch((error) => {
+          console.error(`Live SLO abort failed for ${run.run_id}: ${error.message}`);
+        })
+    });
+  }
+
+  // Copies the script (and its data files and plugins) into results/<run-id>/bundle.
+  async function snapshotBundle(scenario, resultsDir) {
+    const bundleDir = path.join(resultsDir, 'bundle');
+    await mkdir(bundleDir, { recursive: true });
+    if (scenario.script_source === 'shared') {
+      return snapshotSharedBundle(
+        config,
+        { sharedScript: scenario.shared_script, plugins: scenario.plugins },
+        bundleDir
+      );
+    }
+    const jmxPath = path.join(bundleDir, 'script.jmx');
+    await writeFile(jmxPath, await readFile(scenario.script_path));
+    const pluginDir = await copyPlugins(sharedPaths(config).plugins, scenario.plugins || [], bundleDir);
+    return { jmxPath, pluginDir };
+  }
+
+  async function launch(run, scenario, bundle, generators) {
+    const executor = executorFor(run.execution);
+    const handles = [];
+    let watcher = null;
     try {
-      const preparedJmx = await prepareJMX(scriptSnapshotPath, run.run_id, scenario.name, run.results_dir);
+      const preparedJmx = await prepareJMX(bundle.jmxPath, run.run_id, scenario.name, run.results_dir);
+      const bundleDir = path.join(run.results_dir, 'bundle');
+      await pool.query('UPDATE test_runs SET bundle_jmx = $2 WHERE run_id = $1', [
+        run.run_id,
+        path.relative(bundleDir, preparedJmx).split(path.sep).join('/')
+      ]);
       const shares = splitUsers(run.users, run.generators);
-      for (const [index, threads] of shares.entries()) {
-        containerIds.push(
-          await docker.start({
-            runId: run.run_id,
-            jmxPath: preparedJmx,
-            influxdbUrl: config.influxdbUrl,
-            testName: scenario.name,
-            threads,
-            duration: run.duration_seconds,
-            rampup: run.rampup_seconds,
-            resultsDir: run.results_dir,
-            generator: index + 1
-          })
-        );
+
+      if (run.execution === 'agents') {
+        handles.push(...(await agents.createAssignments(run, generators, shares)));
+      } else {
+        for (const [index, threads] of shares.entries()) {
+          handles.push(
+            await docker.start({
+              runId: run.run_id,
+              jmxPath: preparedJmx,
+              influxdbUrl: config.influxdbUrl,
+              testName: scenario.name,
+              threads,
+              duration: run.duration_seconds,
+              rampup: run.rampup_seconds,
+              resultsDir: run.results_dir,
+              generator: index + 1,
+              pluginDir: bundle.pluginDir
+            })
+          );
+        }
       }
       const started = await pool.query(
         `UPDATE test_runs SET status = 'running', container_ids = $2, started_at = now()
          WHERE run_id = $1 AND status = 'starting' RETURNING run_id`,
-        [run.run_id, containerIds]
+        [run.run_id, handles]
       );
       if (!started.rowCount) {
-        // Aborted while the containers were starting.
-        await Promise.all(containerIds.map((id) => docker.stop(id).catch(() => {})));
+        // Aborted while starting.
+        await Promise.all(handles.map((handle) => executor.stop(handle).catch(() => {})));
+      } else {
+        watcher = watchSlo(run, Date.now());
       }
-      await monitorRunContainers(run.run_id, containerIds);
+      await monitorRun(run.run_id, handles, executor);
     } catch (error) {
-      // A generator failed to start: clean up the ones that did.
-      for (const id of containerIds) {
-        await docker.stop(id).catch(() => {});
-        await docker.remove(id).catch(() => {});
+      // Something failed to start: clean up what did.
+      for (const handle of handles) {
+        await executor.stop(handle).catch(() => {});
+        await executor.remove(handle).catch(() => {});
       }
       await finishRun(run.run_id, 1, error.message);
+    } finally {
+      watcher?.stop();
     }
   }
 
@@ -196,46 +261,84 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     const scenarioResult = await pool.query('SELECT * FROM scenarios WHERE id = $1', [scenarioId]);
     if (!scenarioResult.rowCount) throw httpError(404, 'Scenario not found.');
     const scenario = scenarioResult.rows[0];
-    if (!scenario.script_path) throw httpError(400, 'Upload a JMX script before executing this scenario.');
-    const generators = scenario.generators ?? 1;
-    if (generators > config.maxGenerators) {
-      throw httpError(400, `This scenario uses ${generators} load generators; the limit is ${config.maxGenerators}.`);
+    const shared = scenario.script_source === 'shared';
+    if (shared ? !scenario.shared_script : !scenario.script_path) {
+      throw httpError(400, 'Upload a JMX script or choose one from the shared drive before executing this scenario.');
     }
+
+    const remoteIds = scenario.load_generator_ids || [];
+    const execution = remoteIds.length ? 'agents' : 'local';
+    let selectedGenerators = [];
+    let generatorCount = scenario.generators ?? 1;
+    if (execution === 'agents') {
+      if (!agents || !config.agentToken) {
+        throw httpError(
+          409,
+          'This scenario uses remote load generators, but PERF_AGENT_TOKEN is not set on the controller.'
+        );
+      }
+      selectedGenerators = await agents.checkAvailable(remoteIds);
+      generatorCount = selectedGenerators.length;
+    } else if (generatorCount > config.maxGenerators) {
+      throw httpError(
+        400,
+        `This scenario uses ${generatorCount} load generators; the limit is ${config.maxGenerators}.`
+      );
+    }
+    let shares;
     try {
-      splitUsers(scenario.users, generators);
+      shares = splitUsers(scenario.users, generatorCount);
     } catch (error) {
       throw httpError(400, error.message);
     }
+    selectedGenerators.forEach((generator, index) => {
+      if (generator.max_threads && shares[index] > generator.max_threads) {
+        throw httpError(
+          400,
+          `"${generator.name}" would get ${shares[index]} users but accepts at most ${generator.max_threads}. ` +
+            'Select more load generators or reduce the users.'
+        );
+      }
+    });
 
     const runId = generateRunId();
     const resultsDir = path.join(config.resultsRoot, runId);
     await mkdir(resultsDir, { recursive: true });
-    const scriptSnapshot = await readFile(scenario.script_path);
-    const scriptHash = createHash('sha256').update(scriptSnapshot).digest('hex');
-    const scriptSnapshotPath = path.join(resultsDir, 'script.jmx');
-    await writeFile(scriptSnapshotPath, scriptSnapshot);
+    let bundle;
+    try {
+      bundle = await snapshotBundle(scenario, resultsDir);
+    } catch (error) {
+      await rm(resultsDir, { recursive: true, force: true }).catch(() => {});
+      throw error.statusCode ? error : httpError(400, `Could not prepare the test bundle: ${error.message}`);
+    }
+    const scriptHash = createHash('sha256')
+      .update(await readFile(bundle.jmxPath))
+      .digest('hex');
 
     let inserted;
     try {
       inserted = await pool.query(
         `INSERT INTO test_runs
          (run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
-          users, duration_seconds, rampup_seconds, results_dir, slo, generators)
-         VALUES ($1, $2, $3, $4, $5, $6, 'starting', $7, $8, $9, $10, $11, $12)
+          users, duration_seconds, rampup_seconds, results_dir, slo, generators, execution, script_source, plugins)
+         VALUES ($1, $2, $3, $4, $5, $6, 'starting', $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING ${RUN_COLUMNS}, results_dir`,
         [
           runId,
           scenario.id,
           scenario.name,
-          scenario.original_filename || scenario.script_name,
+          shared ? scenario.shared_script : scenario.original_filename || scenario.script_name,
           scriptHash,
-          scenario.script_version,
+          shared ? null : scenario.script_version,
           scenario.users,
           scenario.duration_seconds,
           scenario.rampup_seconds,
           resultsDir,
           scenario.slo,
-          generators
+          generatorCount,
+          execution,
+          scenario.script_source,
+          scenario.plugins || []
         ]
       );
     } catch (error) {
@@ -244,53 +347,60 @@ export function createRunService({ pool, config, docker = defaultDocker, notify 
     }
 
     const { results_dir: _resultsDir, ...run } = inserted.rows[0];
-    const done = launch(inserted.rows[0], scenario, scriptSnapshotPath).catch((error) => {
+    const done = launch(inserted.rows[0], scenario, bundle, selectedGenerators).catch((error) => {
       console.error(`Run ${runId} failed unexpectedly: ${error.message}`);
     });
     return { run, done };
   }
 
-  async function abortRun(runId) {
-    const existing = await pool.query('SELECT status, container_ids FROM test_runs WHERE run_id = $1', [runId]);
+  async function abortRun(runId, { by = 'user', reason = 'Run aborted by user.' } = {}) {
+    const existing = await pool.query('SELECT status, container_ids, execution FROM test_runs WHERE run_id = $1', [
+      runId
+    ]);
     if (!existing.rowCount) throw httpError(404, 'Run not found.');
     if (!['starting', 'running'].includes(existing.rows[0].status)) {
       throw httpError(409, 'Only an active run can be aborted.');
     }
+    const executor = executorFor(existing.rows[0].execution);
 
     const knownIds = existing.rows[0].container_ids;
-    const discoveredIds = knownIds.length ? knownIds : await docker.find(runId);
+    const discoveredIds = knownIds.length ? knownIds : await executor.find(runId);
     const aborted = await pool.query(
       `UPDATE test_runs
-       SET status = 'aborted', ended_at = now(), error = 'Run aborted by user.'
+       SET status = 'aborted', ended_at = now(), error = $2, aborted_by = $3
        WHERE run_id = $1 AND status IN ('starting', 'running')
        RETURNING status, container_ids`,
-      [runId]
+      [runId, reason, by]
     );
     if (!aborted.rowCount) throw httpError(409, 'The run is no longer active.');
 
-    const containerIds = aborted.rows[0].container_ids.length ? aborted.rows[0].container_ids : discoveredIds;
-    await Promise.all(containerIds.map((id) => docker.stop(id)));
-    return { runId, status: 'aborted' };
+    const handles = aborted.rows[0].container_ids.length ? aborted.rows[0].container_ids : discoveredIds;
+    await Promise.all(handles.map((handle) => executor.stop(handle)));
+    return { runId, status: 'aborted', abortedBy: by };
   }
 
   async function recoverActiveRuns() {
     const activeRuns = await pool.query(
-      "SELECT run_id FROM test_runs WHERE status IN ('starting', 'running') ORDER BY started_at"
+      `SELECT ${RUN_COLUMNS}, results_dir FROM test_runs WHERE status IN ('starting', 'running') ORDER BY started_at`
     );
     for (const run of activeRuns.rows) {
       try {
-        const containerIds = await docker.find(run.run_id);
-        if (!containerIds.length) {
+        const executor = executorFor(run.execution);
+        const handles = await executor.find(run.run_id);
+        if (!handles.length) {
           await finishRun(run.run_id, 1, 'No matching JMeter container was found during application recovery.');
           continue;
         }
         await pool.query("UPDATE test_runs SET status = 'running', container_ids = $2 WHERE run_id = $1", [
           run.run_id,
-          containerIds
+          handles
         ]);
-        monitorRunContainers(run.run_id, containerIds).catch((error) => {
-          console.error(`Run recovery failed for ${run.run_id}: ${error.message}`);
-        });
+        const watcher = watchSlo(run, new Date(run.started_at).getTime());
+        monitorRun(run.run_id, handles, executor)
+          .catch((error) => {
+            console.error(`Run recovery failed for ${run.run_id}: ${error.message}`);
+          })
+          .finally(() => watcher.stop());
       } catch (error) {
         console.error(`Could not recover run ${run.run_id}: ${error.message}`);
       }

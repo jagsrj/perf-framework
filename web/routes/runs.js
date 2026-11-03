@@ -17,7 +17,7 @@ export function grafanaUrl(run, baseUrl) {
   return `${baseUrl.replace(/\/$/, '')}/d/jmeter-performance/jmeter-performance-test?${params.toString()}`;
 }
 
-export function runsRouter({ pool, runs, config, analyze = analyzeWithOllama }) {
+export function runsRouter({ pool, runs, config, analyze = analyzeWithOllama, agents = null }) {
   const router = express.Router();
   const withGrafana = (run) => ({ ...run, grafanaUrl: grafanaUrl(run, config.grafanaBaseUrl) });
 
@@ -38,7 +38,9 @@ export function runsRouter({ pool, runs, config, analyze = analyzeWithOllama }) 
   router.get(
     '/:runId',
     asyncHandler(async (request, response) => {
-      response.json(withGrafana(await getRun(request.params.runId)));
+      const run = await getRun(request.params.runId);
+      const loadGenerators = run.execution === 'agents' && agents ? await agents.listAssignments(run.run_id) : [];
+      response.json({ ...withGrafana(run), loadGenerators });
     })
   );
 

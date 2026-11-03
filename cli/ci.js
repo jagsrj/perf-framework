@@ -33,6 +33,9 @@ export function resolveScenario(scenarios, nameOrId) {
 }
 
 export function decideExit(run, { requireSlo = false } = {}) {
+  if (run.status === 'aborted' && run.aborted_by === 'slo') {
+    return { code: EXIT.SLO_FAILED, reason: run.error || 'Aborted early: SLO targets were breached during the run.' };
+  }
   if (run.status !== 'completed')
     return { code: EXIT.ERROR, reason: `Run ${run.status}${run.error ? `: ${run.error}` : ''}` };
   if (!run.slo_result) {

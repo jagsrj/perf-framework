@@ -132,7 +132,7 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE test_runs, scenario_script_versions, scenarios');
+    await pool.query('TRUNCATE run_assignments, load_generators, test_runs, scenario_script_versions, scenarios');
     workDir = await mkdtemp(path.join(tmpdir(), 'perf-api-'));
     docker = createFakeDocker();
 
@@ -144,7 +144,8 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
       ...loadConfig({}),
       port,
       uploadRoot: path.join(workDir, 'scripts'),
-      resultsRoot: path.join(workDir, 'results')
+      resultsRoot: path.join(workDir, 'results'),
+      sharedDir: path.join(workDir, 'shared')
     };
     const runs = createRunService({ pool, config, docker, notify: async () => {} });
     const analyze = async () => ({ model: 'fake', analysis: 'looks fine' });

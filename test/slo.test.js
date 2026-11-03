@@ -77,3 +77,16 @@ test('describeSlo renders a readable sentence', () => {
     'p95 latency ≤ 500 ms, Error rate ≤ 1% (overall)'
   );
 });
+
+test('normalizeSlo stores live-abort settings only when enabled', () => {
+  assert.deepEqual(normalizeSlo({ p95Ms: 500, abortOnFail: true }), {
+    p95Ms: 500,
+    applyToTransactions: false,
+    abortOnFail: true,
+    abortDelaySeconds: 60
+  });
+  assert.equal(normalizeSlo({ p95Ms: 500, abortOnFail: 'true', abortDelaySeconds: '30' }).abortDelaySeconds, 30);
+  assert.equal(normalizeSlo({ p95Ms: 500, abortOnFail: false }).abortOnFail, undefined);
+  assert.throws(() => normalizeSlo({ p95Ms: 500, abortOnFail: true, abortDelaySeconds: -1 }), { statusCode: 400 });
+  assert.match(describeSlo(normalizeSlo({ p95Ms: 500, abortOnFail: true })), /aborts early after 60s warm-up/);
+});

@@ -15,9 +15,15 @@ export function isLoopbackHost(host) {
 }
 
 // Throws if the configuration would expose an unauthenticated API to the network.
-export function assertSafeExposure({ host, apiKey }) {
+export function assertSafeExposure({ host, apiKey, agentToken = null }) {
   if (apiKey && apiKey.length < MIN_API_KEY_LENGTH) {
     throw new Error(`PERF_API_KEY must be at least ${MIN_API_KEY_LENGTH} characters long.`);
+  }
+  if (agentToken && agentToken.length < MIN_API_KEY_LENGTH) {
+    throw new Error(`PERF_AGENT_TOKEN must be at least ${MIN_API_KEY_LENGTH} characters long.`);
+  }
+  if (agentToken && apiKey && agentToken === apiKey) {
+    throw new Error('Use a different value for PERF_AGENT_TOKEN and PERF_API_KEY.');
   }
   if (!isLoopbackHost(host) && !apiKey) {
     throw new Error(

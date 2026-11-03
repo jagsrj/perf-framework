@@ -17,8 +17,9 @@ export function normalizeSlo(input) {
   if (input === undefined || input === null || input === '') return null;
   if (typeof input !== 'object' || Array.isArray(input)) throw invalid('SLO must be an object of targets.');
   const slo = {};
+  const OPTIONS = new Set(['applyToTransactions', 'abortOnFail', 'abortDelaySeconds']);
   for (const key of Object.keys(input)) {
-    if (key !== 'applyToTransactions' && !(key in SLO_TARGETS)) throw invalid(`Unknown SLO target "${key}".`);
+    if (!OPTIONS.has(key) && !(key in SLO_TARGETS)) throw invalid(`Unknown SLO target "${key}".`);
   }
   for (const key of Object.keys(SLO_TARGETS)) {
     const raw = input[key];
@@ -31,7 +32,18 @@ export function normalizeSlo(input) {
     slo[key] = value;
   }
   if (!Object.keys(slo).length) return null;
-  slo.applyToTransactions = input.applyToTransactions === true || input.applyToTransactions === 'true';
+  const flag = (value) => value === true || value === 'true' || value === 'on';
+  slo.applyToTransactions = flag(input.applyToTransactions);
+  // Live checks: abort the run while it is running if a target is breached after the warm-up.
+  if (flag(input.abortOnFail)) {
+    slo.abortOnFail = true;
+    const raw = input.abortDelaySeconds;
+    const delay = raw === undefined || raw === null || raw === '' ? 60 : Number(raw);
+    if (!Number.isSafeInteger(delay) || delay < 0 || delay > 86_400) {
+      throw invalid('SLO abortDelaySeconds (warm-up) must be a whole number between 0 and 86400.');
+    }
+    slo.abortDelaySeconds = delay;
+  }
   return slo;
 }
 
@@ -73,5 +85,6 @@ export function describeSlo(slo) {
   const parts = Object.entries(SLO_TARGETS)
     .filter(([key]) => Number.isFinite(slo[key]))
     .map(([key, { label, suffix }]) => `${label} ≤ ${slo[key]}${suffix}`);
-  return `${parts.join(', ')}${slo.applyToTransactions ? ' (overall and every transaction)' : ' (overall)'}`;
+  const live = slo.abortOnFail ? `; aborts early after ${slo.abortDelaySeconds ?? 60}s warm-up` : '';
+  return `${parts.join(', ')}${slo.applyToTransactions ? ' (overall and every transaction)' : ' (overall)'}${live}`;
 }
