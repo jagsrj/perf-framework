@@ -86,7 +86,7 @@ export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
   <span><strong>Run ID</strong>${escapeHtml(run.run_id)}</span>
   <span><strong>Started</strong>${escapeHtml(new Date(run.started_at).toISOString())}</span>
   <span><strong>Ended</strong>${run.ended_at ? escapeHtml(new Date(run.ended_at).toISOString()) : '—'}</span>
-  <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
+  <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s · ${escapeHtml(run.rampup_seconds)}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${escapeHtml(run.generators)} load generators` : ''}</span>
   <span><strong>Script</strong>${escapeHtml(run.script_name || 'unknown')} · v${escapeHtml(run.script_version ?? '?')}</span>
   <span><strong>Script SHA-256</strong>${escapeHtml((run.script_sha256 || '').slice(0, 16))}…</span>
 </section>

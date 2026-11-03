@@ -68,22 +68,35 @@ function storedApiKey() {
   }
 }
 
-async function authorizedFetch(url, options = {}, askIfRejected = true) {
+let pendingKeyPrompt = null;
+
+// Several requests can be rejected at once (e.g. on page load); ask only once for all of them.
+function askForApiKey() {
+  pendingKeyPrompt ??= Promise.resolve().then(() => {
+    const entered = window.prompt('This perf-framework server needs an API key. Enter it to continue:')?.trim();
+    if (entered) {
+      try {
+        localStorage.setItem(API_KEY_STORAGE, entered);
+      } catch {
+        // storage unavailable: the key is used for the retried requests only
+      }
+    }
+    setTimeout(() => {
+      pendingKeyPrompt = null;
+    }, 0);
+    return entered || null;
+  });
+  return pendingKeyPrompt;
+}
+
+async function authorizedFetch(url, options = {}, keyOverride = null, askIfRejected = true) {
   const headers = new Headers(options.headers || {});
-  const key = storedApiKey();
+  const key = keyOverride || storedApiKey();
   if (key) headers.set('authorization', `Bearer ${key}`);
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401 && askIfRejected) {
-    const entered = window.prompt('This perf-framework server needs an API key. Enter it to continue:');
-    if (entered && entered.trim()) {
-      try {
-        localStorage.setItem(API_KEY_STORAGE, entered.trim());
-      } catch {
-        // storage unavailable: the key is only used for this request
-        return authorizedFetch(url, { ...options, headers: { authorization: `Bearer ${entered.trim()}` } }, false);
-      }
-      return authorizedFetch(url, options, false);
-    }
+    const entered = await askForApiKey();
+    if (entered) return authorizedFetch(url, options, entered, false);
   }
   return response;
 }
@@ -547,7 +560,7 @@ function renderResultsReport({ run, baseline }) {
       <span><strong>Script</strong>${escapeHtml(run.script_name || 'unknown')} · v${escapeHtml(run.script_version ?? 'unknown')}</span>
       <span><strong>Started</strong>${escapeHtml(startedAt)}</span>
       <span><strong>Ended</strong>${escapeHtml(endedAt)}</span>
-      <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up</span>
+      <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${escapeHtml(run.generators)} load generators` : ''}</span>
     </div>
     ${renderSloVerdict(run)}
     <div class="baseline-note">${baselineDescription}</div>
