@@ -8,7 +8,9 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 
 - Scenarios with versioned, validated JMX uploads (SHA-256 tracked)
 - One-click runs in Docker, with abort and crash recovery
-- Distributed load: split a scenario's users across several JMeter containers (load generators)
+- Distributed load: split a scenario's users across remote **load generator** machines (agent-based, outbound-only) or several local containers
+- **Shared drive** for scripts, their data files and JMeter plugins, sent to every load generator when a test starts
+- **Live SLO aborts**: stop a run early when targets are breached, after a warm-up
 - Live Grafana dashboard filtered by run ID
 - Exact p95/p99 summaries per transaction, computed from the JTL in bounded memory
 - Automatic like-for-like baseline comparison
@@ -98,14 +100,15 @@ web/        Express server (REST API, run orchestration), JTL summary, SLO evalu
             HTML report, notifications, Ollama analysis
 web/public/ Browser UI
 mcp/        MCP server: config, HTTP clients, analysis helpers, tool definitions
+agent/      Load generator agent (runs JMeter on remote machines) and its Docker image
 jmeter/     JMeter 5.6.3 Docker image
-infra/      Docker Compose stack and Grafana provisioning
+infra/      Docker Compose stack, Grafana provisioning, and the load generator Compose file
 scripts/    Sample JMX plans
-test/       node:test suites (no services needed)
+test/       node:test suites (API and agent tests need TEST_DATABASE_URL)
 docs/       Architecture, MCP, CI/SLO, API, configuration and beginner guides
 examples/   CI pipeline templates (GitHub Actions perf gate)
 .github/    Workflow that runs the test suite on every push and PR
-data/       Uploaded script versions (git-ignored)
+data/       Uploaded script versions and the default shared drive (git-ignored)
 results/    Per-run artifacts (git-ignored)
 ```
 
@@ -115,6 +118,7 @@ results/    Per-run artifacts (git-ignored)
 |---|---|
 | [Architecture and data lifecycle](docs/ARCHITECTURE.md) | Components, run flow, storage, design decisions |
 | [MCP server](docs/MCP.md) | AI-assisted testing with Claude |
+| [Load generators and shared drive](docs/LOAD-GENERATORS.md) | Remote JMeter machines, scripts, data files and plugins |
 | [SLOs and CI gates](docs/CI.md) | Pass/fail targets, pipeline gating, reports, notifications |
 | [REST API](docs/API.md) | Endpoints and payloads |
 | [Configuration](docs/CONFIGURATION.md) | Environment variables and ports |
@@ -131,7 +135,7 @@ npm test
 
 This project is for **local development only**:
 
-- The web app binds to `127.0.0.1` and has no authentication.
+- By default the web app binds to `127.0.0.1` with no authentication. Remote access and load generators need `PERF_API_KEY` and `PERF_AGENT_TOKEN` (see [Configuration](docs/CONFIGURATION.md#remote-access) and [Load generators](docs/LOAD-GENERATORS.md)).
 - The local database password is `local-dev-only` and Grafana's admin login is `admin`/`admin`. Override them with `POSTGRES_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` before first start, and export the same `POSTGRES_PASSWORD` for the web app.
 - Grafana anonymous Viewer access is enabled for dashboard embedding. It is read-only, but anyone who can reach port 3000 can see dashboards.
 

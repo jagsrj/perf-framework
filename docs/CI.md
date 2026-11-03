@@ -29,8 +29,8 @@ How the verdict works:
 | Exit code | Meaning |
 |---|---|
 | `0` | Run completed and its SLO passed, or no SLO is set |
-| `1` | Run completed but the SLO failed, or no SLO is set and `--require-slo` was used |
-| `2` | Run failed, was aborted, timed out, or couldn't start |
+| `1` | Run completed but the SLO failed, was aborted early by a live SLO check, or no SLO is set and `--require-slo` was used |
+| `2` | Run failed, was aborted by a person, timed out, or couldn't start |
 
 ```bash
 node cli/index.js ci --scenario checkout-smoke --require-slo \
