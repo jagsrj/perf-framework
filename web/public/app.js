@@ -120,7 +120,7 @@ async function loadScriptPreview(scenario) {
     $('#script-preview').textContent = await api(`/api/scenarios/${encodeURIComponent(scenario.id)}/script`);
     $('#script-title').textContent = scenario.original_filename || scenario.script_name;
     $('#script-status').textContent = `Stored JMX · version ${scenario.script_version}`;
-  } catch (error) {
+  } catch {
     $('#script-preview').textContent = 'No JMX uploaded for this scenario yet.';
     $('#script-title').textContent = scenario.script_name;
     $('#script-status').textContent = 'Upload required';
