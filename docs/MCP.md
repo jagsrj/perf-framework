@@ -30,8 +30,8 @@ You can keep using the web UI at the same time. Both drive the same engine and d
 | `check_health` | Web app and database reachable; shows guardrail limits | No |
 | `list_scenarios` | Scenarios with load settings and script status | No |
 | `get_script` | Current JMX for a scenario | No |
-| `create_scenario` | New scenario (name, script name, users, duration, ramp-up) | Yes |
-| `update_scenario` | Change only the fields you pass | Yes |
+| `create_scenario` | New scenario (name, script name, users, duration, ramp-up, optional SLO targets) | Yes |
+| `update_scenario` | Change only the fields you pass, including SLO targets (`slo: null` clears them) | Yes |
 | `upload_script` | Upload JMX from text (`jmxContent`) or a file (`filePath`) as a new version | Yes |
 | `run_scenario` | Start a run with the scenario's saved settings | Yes |
 | `abort_run` | Stop an active run | Yes |
@@ -40,7 +40,9 @@ You can keep using the web UI at the same time. Both drive the same engine and d
 | `get_live_metrics` | Throughput, error rate, latency, active threads over a recent window | No |
 | `get_run_results` | Final summary compared with the automatic baseline | No |
 | `compare_runs` | Any two runs side by side, with a list of regressions | No |
-| `check_slo` | Pass/fail against p95/p99/avg/max latency and error-rate targets | No |
+| `check_slo` | With no targets, returns the run's stored automatic SLO verdict. With targets, runs an ad-hoc pass/fail check | No |
+| `get_trends` | A scenario's recent completed runs: p95/p99, errors, throughput, SLO verdicts | No |
+| `get_report_url` | Links to the run's HTML report (view or download) | No |
 
 Comparisons mark each metric as `better`, `worse`, `unchanged` (within `tolerancePercent`, 10% by default) or `n/a`. The tools return numbers and pass/fail results. The assistant writes the explanation on top of them.
 
@@ -95,6 +97,8 @@ Other connection settings (`PERF_WEB_URL`, `INFLUXDB_QUERY_URL`, `INFLUXDB_DATAB
 - "Here's a HAR export of the checkout flow. Write a JMX script with a CSV data set and correlation for the session token, upload it to the `checkout` scenario, and run it for 2 minutes with 5 users as a smoke test."
 - "Run `search-baseline`, check live metrics every couple of minutes, and abort if the error rate goes above 5%."
 - "Did the last run pass p95 ≤ 800 ms and errors ≤ 1% for every transaction?"
+- "Set the SLO for `checkout` to p95 ≤ 800 ms and errors ≤ 1% per transaction."
+- "Has `checkout` been getting slower over the last 10 runs?"
 - "Compare run X with run Y and summarise the regressions in a short report I can paste into Jira."
 
 ## Notes and limitations
