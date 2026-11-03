@@ -57,8 +57,64 @@ function sloBadge(run) {
     : `<span class="status failed">SLO fail (${run.slo_result.failed}/${run.slo_result.checked})</span>`;
 }
 
+// When the server has PERF_API_KEY set, the UI asks for the key once and keeps it in this browser.
+const API_KEY_STORAGE = 'perf-framework.apiKey';
+
+function storedApiKey() {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+async function authorizedFetch(url, options = {}, askIfRejected = true) {
+  const headers = new Headers(options.headers || {});
+  const key = storedApiKey();
+  if (key) headers.set('authorization', `Bearer ${key}`);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 && askIfRejected) {
+    const entered = window.prompt('This perf-framework server needs an API key. Enter it to continue:');
+    if (entered && entered.trim()) {
+      try {
+        localStorage.setItem(API_KEY_STORAGE, entered.trim());
+      } catch {
+        // storage unavailable: the key is only used for this request
+        return authorizedFetch(url, { ...options, headers: { authorization: `Bearer ${entered.trim()}` } }, false);
+      }
+      return authorizedFetch(url, options, false);
+    }
+  }
+  return response;
+}
+
+async function openReport(runId, download) {
+  // Open the tab straight away so the browser does not treat it as an unrequested pop-up.
+  const tab = download ? null : window.open('', '_blank');
+  try {
+    const response = await authorizedFetch(
+      `/api/runs/${encodeURIComponent(runId)}/report${download ? '?download' : ''}`
+    );
+    if (!response.ok) throw new Error(`Could not load the report (${response.status}).`);
+    const url = URL.createObjectURL(new Blob([await response.text()], { type: 'text/html' }));
+    if (download) {
+      const filename = /filename="?([^"]+)"?/.exec(response.headers.get('content-disposition') || '')?.[1];
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `perf-report-${runId}.html`;
+      link.click();
+    } else {
+      tab.location = url;
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    tab?.close();
+    notify(error.message);
+  }
+}
+
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await authorizedFetch(url, options);
   const contentType = response.headers.get('content-type') || '';
   const body = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) throw new Error(body?.error || body || `Request failed (${response.status})`);
@@ -519,8 +575,8 @@ function renderResultsReport({ run, baseline }) {
       </table>
     </div>
     <div class="report-actions">
-      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report" target="_blank" rel="noreferrer">Open HTML report ↗</a>
-      <a class="secondary-link" href="/api/runs/${encodeURIComponent(run.run_id)}/report?download">Download report</a>
+      <button class="secondary-link" type="button" data-report="${escapeHtml(run.run_id)}">Open HTML report ↗</button>
+      <button class="secondary-link" type="button" data-report="${escapeHtml(run.run_id)}" data-download>Download report</button>
     </div>
     <p class="results-footnote">For latency and error metrics, a decrease is an improvement. Positive changes are increases; compare them in the context of your test goals.</p>
     ${
@@ -635,6 +691,8 @@ $('#results-select').addEventListener('change', (event) =>
 );
 $('#refresh-results').addEventListener('click', () => loadResults().catch((error) => notify(error.message)));
 $('#results-report').addEventListener('click', (event) => {
+  const reportButton = event.target.closest('[data-report]');
+  if (reportButton) return openReport(reportButton.dataset.report, reportButton.hasAttribute('data-download'));
   const button = event.target.closest('[data-ai-analyze]');
   if (button) analyzeResultsWithAi(button.dataset.aiAnalyze, button);
 });

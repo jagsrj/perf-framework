@@ -2,7 +2,9 @@
 
 The web app (`web/server.js`) serves the UI and a JSON API on `http://localhost:4000`. The UI, the MCP server and any scripts you write all use this API.
 
-**Access:** requests must use host `localhost:4000` or `127.0.0.1:4000`. Cross-origin browser requests are rejected. There is no authentication, so do not expose the port to a network.
+**Access:** requests must use host `localhost:4000`, `127.0.0.1:4000` or a name listed in `PERF_ALLOWED_HOSTS`. Cross-origin browser requests are rejected.
+
+**Authentication:** off by default (the app only listens on `127.0.0.1`). When `PERF_API_KEY` is set, every request except `GET /api/health` must send `Authorization: Bearer <key>` or `X-API-Key: <key>`, otherwise it gets `401`. See [CONFIGURATION.md](./CONFIGURATION.md#remote-access).
 
 **Errors** come back as `{ "error": "message" }` with a 4xx/5xx status.
 

@@ -20,8 +20,9 @@ async function withTimeout(timeoutMs, work) {
 }
 
 export class PerfApiClient {
-  constructor({ baseUrl, timeoutMs = 30_000, fetchImpl = fetch }) {
+  constructor({ baseUrl, apiKey = null, timeoutMs = 30_000, fetchImpl = fetch }) {
     this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
     this.fetch = fetchImpl;
   }
@@ -34,7 +35,10 @@ export class PerfApiClient {
         this.fetch(url, {
           method,
           signal,
-          headers: json === undefined ? undefined : { 'content-type': 'application/json' },
+          headers: {
+            ...(json === undefined ? {} : { 'content-type': 'application/json' }),
+            ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {})
+          },
           body: json === undefined ? body : JSON.stringify(json)
         })
       );

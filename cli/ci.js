@@ -144,6 +144,6 @@ export async function runGate({
   return { ...decision, run };
 }
 
-export function createClient(url) {
-  return new PerfApiClient({ baseUrl: url.replace(/\/$/, ''), timeoutMs: 30_000 });
+export function createClient(url, apiKey = process.env.PERF_API_KEY || null) {
+  return new PerfApiClient({ baseUrl: url.replace(/\/$/, ''), apiKey, timeoutMs: 30_000 });
 }

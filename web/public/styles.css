@@ -77,6 +77,15 @@ h3 {
   text-decoration: none;
   font-weight: 650;
 }
+button.secondary-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: none;
+}
 .external-link:hover,
 .secondary-link:hover {
   color: var(--accent-dark);
