@@ -12,7 +12,7 @@ export default [
       globals: { ...globals.node }
     },
     rules: {
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_|^(request|response|next)$' }],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_|^(request|response|next)$', varsIgnorePattern: '^_' }],
       'no-console': 'off',
       eqeqeq: ['error', 'smart'],
       'prefer-const': 'error'

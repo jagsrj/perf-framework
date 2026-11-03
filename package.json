@@ -10,7 +10,8 @@
     "test": "node --test",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "migrate": "node cli/migrate.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

@@ -108,3 +108,11 @@ export async function runJMeterInDocker(runId, jmxPath, influxdbUrl, testName, t
     child.once('close', (code) => resolve(code ?? 1));
   });
 }
+
+export async function removeJMeterContainer(containerId) {
+  try {
+    await runDocker(['rm', '--force', containerId]);
+  } catch (error) {
+    if (!/No such container/i.test(error.message)) throw error;
+  }
+}
