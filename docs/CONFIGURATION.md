@@ -37,6 +37,8 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `PERF_INSIGHT_ENVIRONMENT` | (none) | Environment label sent with each run |
 | `PERF_INSIGHT_SKIP_AI` | `false` | Statistics only, no AI diagnosis |
 | `PERF_INSIGHT_TIMEOUT_SECONDS` | `300` | How long to wait for the check before recording it as unavailable |
+| `SERVICE_VIRTUALIZER_URL` | (off) | Hand runs to [service-virtualizer](./SERVICE-VIRTUALIZER.md): shared runId for metrics, scenario timelines, reset at the end |
+| `SERVICE_VIRTUALIZER_TIMEOUT_SECONDS` | `10` | Longest a run waits for service-virtualizer at start and end |
 
 ## Remote access
 

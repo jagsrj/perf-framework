@@ -369,6 +369,54 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
     assert.match(plain.body.error, /PERF_INSIGHT_URL/);
   });
 
+  test('tells service-virtualizer when a run starts (before any load) and when it ends', async (t) => {
+    t.after(cleanup);
+    const events = [];
+    const virtualServices = {
+      enabled: true,
+      runStarted: async (runId, scenarioName) => {
+        events.push({ event: 'started', runId, scenarioName, containersAlreadyStarted: docker.started.length });
+        return { runId, timeline: null };
+      },
+      runEnded: async (runId) => {
+        events.push({ event: 'ended', runId });
+        // A failing virtualizer reports an error but must not affect the run.
+        return { status: 'error', error: 'unreachable' };
+      }
+    };
+    const runs = createRunService({ pool, config, docker, notify: async () => {}, virtualServices });
+    server.removeAllListeners('request');
+    server.on('request', createApp({ pool, runs, config, analyze: async () => ({}) }));
+
+    const scenario = await createScenario();
+    await uploadScript(scenario.id);
+
+    // A run that completes.
+    const completed = (await call('POST', `/api/scenarios/${scenario.id}/runs`)).body;
+    await waitForContainer(1);
+    docker.finish(0);
+    const done = await waitForStatus(completed.run_id, ['completed']);
+    assert.equal(done.status, 'completed', 'a virtualizer error never fails the run');
+
+    // A run that is aborted.
+    const aborted = (await call('POST', `/api/scenarios/${scenario.id}/runs`)).body;
+    await waitForContainer(2);
+    await waitForStatus(aborted.run_id, ['running']);
+    await call('POST', `/api/runs/${aborted.run_id}/abort`);
+    await waitForStatus(aborted.run_id, ['aborted']);
+    const deadline = Date.now() + 5000;
+    while (events.filter((e) => e.event === 'ended').length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    assert.deepEqual(events, [
+      { event: 'started', runId: completed.run_id, scenarioName: scenario.name, containersAlreadyStarted: 0 },
+      { event: 'ended', runId: completed.run_id },
+      { event: 'started', runId: aborted.run_id, scenarioName: scenario.name, containersAlreadyStarted: 1 },
+      { event: 'ended', runId: aborted.run_id }
+    ]);
+  });
+
   test('marks a run failed when JMeter exits non-zero, and fails the SLO when breached', async (t) => {
     t.after(cleanup);
     const scenario = await createScenario({ slo: { p95Ms: 10 } });

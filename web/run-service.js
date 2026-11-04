@@ -21,6 +21,7 @@ import { httpError } from './http.js';
 import { startLiveSloWatcher } from './live-slo.js';
 import { notificationSettings, sendRunNotification } from './notify.js';
 import { analyzeWithPerfInsight, perfInsightSettings } from './perf-insight.js';
+import { createServiceVirtualizerHooks } from './service-virtualizer.js';
 import { copyPlugins, sharedPaths, snapshotSharedBundle } from './shared-drive.js';
 import { evaluateSlo } from './slo.js';
 import { summarizeJtlStreams } from './summary.js';
@@ -58,7 +59,8 @@ export function createRunService({
   agents = null,
   notify = sendRunNotification,
   insight = analyzeWithPerfInsight,
-  insightSettings = perfInsightSettings()
+  insightSettings = perfInsightSettings(),
+  virtualServices = createServiceVirtualizerHooks()
 }) {
   const notifications = notificationSettings();
 
@@ -124,11 +126,14 @@ export function createRunService({
     return updated.rowCount ? updated.rows[0] : null;
   }
 
-  // After a run is recorded: perf-insight regression check (when queued), then the notification,
-  // so the message can include the verdict. Neither can change the run's own status.
+  // After a run is recorded: end the run in service-virtualizer (when configured), then the
+  // perf-insight regression check (when queued), then the notification, so the message can
+  // include the verdict. None of these can change the run's own status.
   async function followUpRun(finished) {
     if (!finished) return;
     const { results_dir: resultsDir, ...run } = finished;
+    // First, so virtual services return to baseline promptly (perf-insight can take minutes).
+    await virtualServices.runEnded(run.run_id);
     if (run.insight?.status === 'pending') {
       let result;
       try {
@@ -252,6 +257,9 @@ export function createRunService({
         path.relative(bundleDir, preparedJmx).split(path.sep).join('/')
       ]);
       const shares = splitUsers(run.users, run.generators);
+      // Before any load: tag virtual-service metrics with this run and apply the scenario's
+      // timeline, so its first profile is in place for the first request. Never blocks the run.
+      await virtualServices.runStarted(run.run_id, scenario.name);
 
       if (run.execution === 'agents') {
         handles.push(...(await agents.createAssignments(run, generators, shares)));

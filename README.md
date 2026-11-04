@@ -16,6 +16,7 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 - Automatic like-for-like baseline comparison
 - SLO targets per scenario, with an automatic pass/fail verdict on every run
 - Optional **regression checks** with [perf-insight](https://github.com/jagsrj/perf-insight): every completed run is compared statistically with earlier good runs, correlated with Dynatrace/Splunk, and given a pass/warn/fail verdict in the UI, reports, notifications and CI gate ([docs/PERF-INSIGHT.md](docs/PERF-INSIGHT.md))
+- Optional **virtual services** with [service-virtualizer](https://github.com/jagsrj/service-virtualizer): each run is tagged across both tools, plays the scenario's dependency timeline (e.g. a brownout at minute 5), and leaves the virtual services reset ([docs/SERVICE-VIRTUALIZER.md](docs/SERVICE-VIRTUALIZER.md))
 - CI/CD gate (`node cli/index.js ci`) with exit codes, JUnit XML and HTML report output
 - Shareable HTML reports, scenario trend data, and Slack/Teams/webhook notifications
 - Optional local AI explanation via Ollama
@@ -122,6 +123,7 @@ results/    Per-run artifacts (git-ignored)
 | [Load generators and shared drive](docs/LOAD-GENERATORS.md) | Remote JMeter machines, scripts, data files and plugins |
 | [SLOs and CI gates](docs/CI.md) | Pass/fail targets, pipeline gating, reports, notifications |
 | [Regression checks](docs/PERF-INSIGHT.md) | perf-insight hand-off: statistical comparison with earlier runs |
+| [Virtual services](docs/SERVICE-VIRTUALIZER.md) | service-virtualizer hand-off: dependency behaviour per scenario, shared metrics |
 | [REST API](docs/API.md) | Endpoints and payloads |
 | [Configuration](docs/CONFIGURATION.md) | Environment variables and ports |
 | [Tech stack and beginner guide](docs/TECH-STACK-AND-BEGINNER-GUIDE.md) | Learn the stack from scratch |
