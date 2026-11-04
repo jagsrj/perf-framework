@@ -48,6 +48,33 @@ function verdictBlock(run) {
     <table><thead><tr><th>Scope</th><th>Metric</th><th>Target</th><th>Actual</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+function insightBlock(insight) {
+  if (!insight) return '';
+  if (insight.status !== 'ok') {
+    const text =
+      insight.status === 'pending'
+        ? 'Regression check is still running.'
+        : `Regression check unavailable: ${insight.error}`;
+    return `<h2>Regression check (perf-insight)</h2><div class="verdict none">${escapeHtml(text)}</div>`;
+  }
+  const cls = insight.verdict === 'pass' ? 'pass' : insight.verdict === 'fail' ? 'fail' : 'warn';
+  const rows = [...(insight.failing || []).map((t) => ['FAIL', t]), ...(insight.warnings || []).map((t) => ['WARN', t])]
+    .map(
+      ([level, t]) =>
+        `<tr class="${level === 'FAIL' ? 'fail' : ''}"><td>${level}</td><td>${escapeHtml(t.name)}</td><td>${t.reasons.map(escapeHtml).join('<br>')}</td></tr>`
+    )
+    .join('');
+  const basis = insight.baselineRuns
+    ? `Compared statistically with ${insight.baselineRuns} earlier good run(s) of this scenario.`
+    : 'No baseline yet; checked against perf-insight SLOs only.';
+  return `<h2>Regression check (perf-insight)</h2>
+<div class="verdict ${cls}">${escapeHtml(insight.verdict.toUpperCase())}<br><small>${escapeHtml(basis)}</small></div>
+${rows ? `<table><thead><tr><th>Result</th><th>Transaction</th><th>Why</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+${insight.missingTransactions?.length ? `<p class="muted">Missing vs baseline: ${insight.missingTransactions.map(escapeHtml).join(', ')}</p>` : ''}
+${insight.aiSummary ? `<p>${escapeHtml(insight.aiSummary)}</p>` : ''}
+${insight.reportUrl ? `<p><a href="${escapeHtml(insight.reportUrl)}">Full perf-insight report</a> (statistics, APM metrics, logs, AI findings)</p>` : ''}`;
+}
+
 export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
   const summary = run.summary;
   const metrics = summary ? compareSummaries(summary, baseline?.summary) : [];
@@ -74,7 +101,7 @@ export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
   .better { color: #1b7a43; } .worse { color: #c62828; } tr.fail td { background: #fdecea; }
   .verdict { padding: 14px 16px; border-radius: 8px; font-weight: 700; font-size: 16px; }
   .verdict small { font-weight: 400; font-size: 13px; }
-  .verdict.pass { background: #e3f6ea; color: #1b7a43; } .verdict.fail { background: #fdecea; color: #c62828; } .verdict.none { background: #eef2f6; color: #486581; }
+  .verdict.pass { background: #e3f6ea; color: #1b7a43; } .verdict.warn { background: #fff4e0; color: #8a5300; } .verdict.fail { background: #fdecea; color: #c62828; } .verdict.none { background: #eef2f6; color: #486581; }
   .muted { color: #627d98; } footer { margin-top: 36px; font-size: 12px; color: #829ab1; }
 </style>
 </head>
@@ -93,6 +120,8 @@ export function renderRunReport({ run, baseline, generatedAt = new Date() }) {
 
 <h2>SLO verdict</h2>
 ${verdictBlock(run)}
+
+${insightBlock(run.insight)}
 
 <h2>Summary${baseline ? ` vs baseline ${escapeHtml(baseline.run_id)}` : ''}</h2>
 ${

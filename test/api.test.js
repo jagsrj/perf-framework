@@ -307,6 +307,68 @@ describe('web API', { skip: databaseUrl ? false : 'set TEST_DATABASE_URL to run 
     assert.equal(runs.body.length, 2);
   });
 
+  test('hands completed runs to perf-insight before notifying, and can re-run the check', async (t) => {
+    t.after(cleanup);
+    const calls = [];
+    const notified = [];
+    const insight = async (finishedRun, { resultsDir, settings }) => {
+      calls.push({ runId: finishedRun.run_id, status: finishedRun.status, resultsDir, url: settings.url });
+      if (calls.length === 1) {
+        const pending = await pool.query('SELECT insight FROM test_runs WHERE run_id = $1', [finishedRun.run_id]);
+        assert.deepEqual(pending.rows[0].insight, { status: 'pending' }, 'marked pending while it runs');
+      }
+      return { status: 'ok', verdict: calls.length === 1 ? 'fail' : 'pass', failing: [], warnings: [] };
+    };
+    const runs = createRunService({
+      pool,
+      config,
+      docker,
+      notify: async (finished) => notified.push(finished),
+      insight,
+      insightSettings: { enabled: true, url: 'http://insight.test' }
+    });
+    // Swap this test's server over to a run service with the perf-insight hand-off enabled.
+    const plainApp = server.listeners('request')[0];
+    server.removeAllListeners('request');
+    server.on('request', createApp({ pool, runs, config, analyze: async () => ({}) }));
+    const get = async (p) => (await call('GET', p)).body;
+
+    const scenario = await createScenario();
+    await uploadScript(scenario.id);
+    const started = (await call('POST', `/api/scenarios/${scenario.id}/runs`)).body;
+    await waitForContainer(1);
+    docker.finish(0);
+    const deadline = Date.now() + 5000;
+    let run;
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      run = await get(`/api/runs/${started.run_id}`);
+    } while ((run.status !== 'completed' || run.insight?.status === 'pending') && Date.now() < deadline);
+
+    assert.equal(run.insight.verdict, 'fail');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].status, 'completed');
+    assert.match(calls[0].resultsDir, new RegExp(started.run_id));
+    assert.equal(notified.length, 1);
+    assert.equal(notified[0].insight.verdict, 'fail', 'the notification carries the verdict');
+    assert.equal(notified[0].results_dir, undefined, 'internal paths stay out of notifications');
+
+    const report = (await call('GET', `/api/runs/${started.run_id}/report`)).text;
+    assert.match(report, /Regression check \(perf-insight\)/);
+
+    const again = await call('POST', `/api/runs/${started.run_id}/insight`);
+    assert.equal(again.status, 200);
+    assert.equal(again.body.verdict, 'pass');
+    assert.equal((await get(`/api/runs/${started.run_id}`)).insight.verdict, 'pass');
+
+    // Disabled integration: the re-run endpoint explains why.
+    server.removeAllListeners('request');
+    server.on('request', plainApp);
+    const plain = await call('POST', `/api/runs/${started.run_id}/insight`);
+    assert.equal(plain.status, 409);
+    assert.match(plain.body.error, /PERF_INSIGHT_URL/);
+  });
+
   test('marks a run failed when JMeter exits non-zero, and fails the SLO when breached', async (t) => {
     t.after(cleanup);
     const scenario = await createScenario({ slo: { p95Ms: 10 } });

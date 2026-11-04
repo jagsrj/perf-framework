@@ -15,6 +15,7 @@ An **MCP server** lets AI assistants such as Claude drive the same framework in 
 - Exact p95/p99 summaries per transaction, computed from the JTL in bounded memory
 - Automatic like-for-like baseline comparison
 - SLO targets per scenario, with an automatic pass/fail verdict on every run
+- Optional **regression checks** with [perf-insight](https://github.com/jagsrj/perf-insight): every completed run is compared statistically with earlier good runs, correlated with Dynatrace/Splunk, and given a pass/warn/fail verdict in the UI, reports, notifications and CI gate ([docs/PERF-INSIGHT.md](docs/PERF-INSIGHT.md))
 - CI/CD gate (`node cli/index.js ci`) with exit codes, JUnit XML and HTML report output
 - Shareable HTML reports, scenario trend data, and Slack/Teams/webhook notifications
 - Optional local AI explanation via Ollama
@@ -120,6 +121,7 @@ results/    Per-run artifacts (git-ignored)
 | [MCP server](docs/MCP.md) | AI-assisted testing with Claude |
 | [Load generators and shared drive](docs/LOAD-GENERATORS.md) | Remote JMeter machines, scripts, data files and plugins |
 | [SLOs and CI gates](docs/CI.md) | Pass/fail targets, pipeline gating, reports, notifications |
+| [Regression checks](docs/PERF-INSIGHT.md) | perf-insight hand-off: statistical comparison with earlier runs |
 | [REST API](docs/API.md) | Endpoints and payloads |
 | [Configuration](docs/CONFIGURATION.md) | Environment variables and ports |
 | [Tech stack and beginner guide](docs/TECH-STACK-AND-BEGINNER-GUIDE.md) | Learn the stack from scratch |

@@ -15,8 +15,10 @@ function headline(run) {
       ? 'SLO passed'
       : `SLO FAILED (${run.slo_result.failed}/${run.slo_result.checked})`
     : null;
-  const icon = run.status !== 'completed' || run.slo_result?.passed === false ? '❌' : '✅';
-  return `${icon} ${run.scenario_name}: run ${run.status}${slo ? ` · ${slo}` : ''}`;
+  const insight = run.insight?.status === 'ok' ? `regression check ${run.insight.verdict.toUpperCase()}` : null;
+  const failed = run.status !== 'completed' || run.slo_result?.passed === false || run.insight?.verdict === 'fail';
+  const icon = failed ? '❌' : run.insight?.verdict === 'warn' ? '⚠️' : '✅';
+  return `${icon} ${run.scenario_name}: run ${run.status}${slo ? ` · ${slo}` : ''}${insight ? ` · ${insight}` : ''}`;
 }
 
 function facts(run) {
@@ -33,6 +35,17 @@ function facts(run) {
       ['p95', `${n(s.p95ResponseMs)} ms`],
       ['p99', `${n(s.p99ResponseMs)} ms`]
     );
+  }
+  const insight = run.insight;
+  if (insight?.status === 'ok') {
+    const flagged = [...(insight.failing || []), ...(insight.warnings || [])].map((t) => t.name);
+    list.push([
+      'Regression check',
+      `${insight.verdict.toUpperCase()}${flagged.length ? ` (${flagged.slice(0, 5).join(', ')}${flagged.length > 5 ? ', …' : ''})` : ''}`
+    ]);
+    if (insight.reportUrl) list.push(['perf-insight report', insight.reportUrl]);
+  } else if (insight?.status === 'error') {
+    list.push(['Regression check', 'unavailable']);
   }
   if (run.error) list.push(['Error', run.error]);
   return list;
@@ -59,7 +72,8 @@ export function buildNotification(run, { format, appUrl }) {
         summary: run.summary
           ? Object.fromEntries(Object.entries(run.summary).filter(([key]) => key !== 'transactions'))
           : null,
-        sloPassed: run.slo_result ? run.slo_result.passed : null
+        sloPassed: run.slo_result ? run.slo_result.passed : null,
+        insight: run.insight || null
       },
       reportUrl
     };

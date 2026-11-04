@@ -32,6 +32,11 @@ Everything has a local-development default, so nothing needs to be set to get st
 | `NOTIFY_WEBHOOK_URL` | (off) | Post a message when a run finishes ([CI.md](./CI.md#notifications)) |
 | `NOTIFY_WEBHOOK_FORMAT` | `slack` | `slack`, `teams` (Workflows Adaptive Card) or `json` |
 | `APP_BASE_URL` | `http://localhost:<WEB_PORT>` | Base URL used for report links in notifications |
+| `PERF_INSIGHT_URL` | (off) | Send completed runs to [perf-insight](./PERF-INSIGHT.md) for a statistical regression check |
+| `PERF_INSIGHT_API_KEY` | (none) | perf-insight API key |
+| `PERF_INSIGHT_ENVIRONMENT` | (none) | Environment label sent with each run |
+| `PERF_INSIGHT_SKIP_AI` | `false` | Statistics only, no AI diagnosis |
+| `PERF_INSIGHT_TIMEOUT_SECONDS` | `300` | How long to wait for the check before recording it as unavailable |
 
 ## Remote access
 
