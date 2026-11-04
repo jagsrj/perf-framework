@@ -29,7 +29,7 @@ How the verdict works:
 | Exit code | Meaning |
 |---|---|
 | `0` | Run completed and its SLO passed, or no SLO is set |
-| `1` | Run completed but the SLO failed, was aborted early by a live SLO check, or no SLO is set and `--require-slo` was used |
+| `1` | Run completed but the SLO failed, was aborted early by a live SLO check, or no SLO is set and `--require-slo` was used; or [perf-insight](./PERF-INSIGHT.md) found a regression |
 | `2` | Run failed, was aborted by a person, timed out, or couldn't start |
 
 ```bash
@@ -46,6 +46,8 @@ node cli/index.js ci --scenario checkout-smoke --require-slo \
 | `--require-slo` | off | Treat "no SLO set" as a failure |
 | `--junit <path>` | | JUnit XML with one test case per SLO check. GitHub, Jenkins, Azure DevOps and GitLab can display it |
 | `--report <path>` | | Saves the self-contained HTML report |
+| `--insight-fail-on <fail\|warn>` | `fail` | Which [perf-insight](./PERF-INSIGHT.md) regression verdict fails the gate (exit `1`) |
+| `--require-insight` | off | Exit `2` if the perf-insight regression check is unavailable |
 
 Example output:
 

@@ -63,7 +63,14 @@ program
   .option('--require-slo', 'Fail if the scenario has no SLO targets', false)
   .option('--junit <path>', 'Write SLO checks as JUnit XML (for CI test reports)')
   .option('--report <path>', 'Save the HTML report to this path')
+  .option('--insight-fail-on <verdict>', 'perf-insight verdict that fails the gate: fail or warn', 'fail')
+  .option('--require-insight', 'Exit 2 if the perf-insight regression check is not available', false)
   .action(async (options) => {
+    if (!['fail', 'warn'].includes(options.insightFailOn)) {
+      console.error('--insight-fail-on must be fail or warn');
+      process.exitCode = 2;
+      return;
+    }
     const { createClient, runGate } = await import('./ci.js');
     const result = await runGate({
       client: createClient(options.url),
@@ -71,6 +78,8 @@ program
       timeoutSeconds: options.timeout === undefined ? undefined : Number(options.timeout),
       pollSeconds: Number(options.poll),
       requireSlo: options.requireSlo,
+      insightFailOn: options.insightFailOn,
+      requireInsight: options.requireInsight,
       junitPath: options.junit,
       reportPath: options.report
     });

@@ -68,6 +68,15 @@ function sloBadge(run) {
     : `<span class="status failed">SLO fail (${run.slo_result.failed}/${run.slo_result.checked})</span>`;
 }
 
+function insightBadge(run) {
+  const insight = run.insight;
+  if (!insight) return '';
+  if (insight.status === 'pending') return '<span class="status running">Regression check…</span>';
+  if (insight.status !== 'ok') return '';
+  const cls = { pass: 'completed', warn: 'running', fail: 'failed' }[insight.verdict] || 'aborted';
+  return `<span class="status ${cls}" title="perf-insight regression check">Regression ${escapeHtml(insight.verdict)}</span>`;
+}
+
 // When the server has PERF_API_KEY set, the UI asks for the key once and keeps it in this browser.
 const API_KEY_STORAGE = 'perf-framework.apiKey';
 
@@ -596,7 +605,7 @@ function renderRuns() {
       .map(
         (run) => `
       <article class="run-card">
-        <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>${sloBadge(run)}</div>
+        <div class="card-title">${escapeHtml(run.scenario_name)}<span class="status ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>${sloBadge(run)}${insightBadge(run)}</div>
         <div class="card-meta">Run ${escapeHtml(run.run_id)}<br>${new Date(run.started_at).toLocaleString()} · ${run.users} users · ${run.duration_seconds}s</div>
         <div class="card-actions"><button class="secondary" data-monitor="${escapeHtml(run.run_id)}">Monitor run</button></div>
       </article>`
@@ -794,6 +803,38 @@ function renderSloVerdict(run) {
   </div>`;
 }
 
+function renderInsightVerdict(run) {
+  const insight = run.insight;
+  if (!insight) return '';
+  if (insight.status === 'pending')
+    return '<div class="slo-verdict none">perf-insight regression check is running…</div>';
+  if (insight.status !== 'ok') {
+    return `<div class="slo-verdict none">perf-insight regression check unavailable: ${escapeHtml(insight.error)}</div>`;
+  }
+  const flagged = [
+    ...(insight.failing || []).map((t) => ['FAIL', t]),
+    ...(insight.warnings || []).map((t) => ['WARN', t])
+  ];
+  const cls = insight.verdict === 'pass' ? 'pass' : insight.verdict === 'fail' ? 'fail' : 'warn';
+  return `<div class="slo-verdict ${cls}">
+    <strong>Regression check ${escapeHtml(insight.verdict.toUpperCase())}</strong>
+    <span>${insight.baselineRuns ? `vs ${insight.baselineRuns} earlier good run(s)` : 'no baseline yet (SLOs only)'}${
+      insight.reportUrl
+        ? ` · <a href="${escapeHtml(insight.reportUrl)}" target="_blank" rel="noopener">perf-insight report</a>`
+        : ''
+    }</span>
+    ${
+      flagged.length
+        ? `<ul>${flagged
+            .slice(0, 8)
+            .map(([level, t]) => `<li>${level} ${escapeHtml(t.name)}: ${escapeHtml(t.reasons[0] || '')}</li>`)
+            .join('')}</ul>`
+        : ''
+    }
+    ${insight.aiSummary ? `<span>${escapeHtml(insight.aiSummary)}</span>` : ''}
+  </div>`;
+}
+
 function renderResultsReport({ run, baseline }) {
   const report = $('#results-report');
   report.classList.remove('empty');
@@ -832,6 +873,7 @@ function renderResultsReport({ run, baseline }) {
       <span><strong>Load</strong>${escapeHtml(run.users)} users · ${escapeHtml(run.duration_seconds)}s duration · ${escapeHtml(run.rampup_seconds)}s ramp-up${(run.generators ?? 1) > 1 ? ` · ${escapeHtml(run.generators)} load generators` : ''}</span>
     </div>
     ${renderSloVerdict(run)}
+    ${renderInsightVerdict(run)}
     <div class="baseline-note">${baselineDescription}</div>
     <div class="results-table-wrap">
       <table class="results-table">

@@ -620,6 +620,10 @@ footer {
   background: #fdecea;
   color: #c62828;
 }
+.slo-verdict.warn {
+  background: #fff4e0;
+  color: #8a5300;
+}
 .slo-verdict.none {
   background: #eef2f6;
   color: #486581;

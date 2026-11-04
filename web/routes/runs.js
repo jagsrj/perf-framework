@@ -75,6 +75,14 @@ export function runsRouter({ pool, runs, config, analyze = analyzeWithOllama, ag
     })
   );
 
+  // Re-run the perf-insight regression check (for example after fixing its configuration).
+  router.post(
+    '/:runId/insight',
+    asyncHandler(async (request, response) => {
+      response.json(await runs.reanalyzeRun(request.params.runId));
+    })
+  );
+
   router.get(
     '/:runId/report',
     asyncHandler(async (request, response) => {

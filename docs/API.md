@@ -74,6 +74,7 @@ The agent-facing endpoints under `/api/agent/` use `PERF_AGENT_TOKEN` and are de
 | GET | `/api/runs/:runId/results` | `{ run, baseline }`, where `baseline` is the latest earlier completed run with the same scenario, script hash and load settings, or `null` |
 | GET | `/api/runs/:runId/report` | Self-contained HTML report. Add `?download` to get it as an attachment |
 | POST | `/api/runs/:runId/abort` | Stop an active run (`409` if not active) |
+| POST | `/api/runs/:runId/insight` | Re-run the [perf-insight](./PERF-INSIGHT.md) regression check for a completed run (409 if `PERF_INSIGHT_URL` is not set) |
 | POST | `/api/runs/:runId/ai-analysis` | Ollama explanation of a completed run's summary and baseline |
 
 Run `status` values: `starting`, `running`, `completed`, `failed`, `aborted`. Aborted runs have `aborted_by`: `user` or `slo` (live SLO check). Runs record `execution` (`local` or `agents`), `script_source` and `plugins`, and `GET /api/runs/:runId` adds `loadGenerators`: each remote generator's users, status, exit code and bytes of results received.

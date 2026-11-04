@@ -20,13 +20,14 @@ import { generateRunId } from '../cli/run-id.js';
 import { httpError } from './http.js';
 import { startLiveSloWatcher } from './live-slo.js';
 import { notificationSettings, sendRunNotification } from './notify.js';
+import { analyzeWithPerfInsight, perfInsightSettings } from './perf-insight.js';
 import { copyPlugins, sharedPaths, snapshotSharedBundle } from './shared-drive.js';
 import { evaluateSlo } from './slo.js';
 import { summarizeJtlStreams } from './summary.js';
 
 export const RUN_COLUMNS = `run_id, scenario_id, scenario_name, script_name, script_sha256, script_version, status,
   users, duration_seconds, rampup_seconds, generators, execution, script_source, plugins, aborted_by,
-  started_at, ended_at, exit_code, error, summary, slo, slo_result`;
+  started_at, ended_at, exit_code, error, summary, slo, slo_result, insight`;
 
 // results.jtl (single container, older runs) or results-<n>.jtl (one per load generator).
 const JTL_FILE = /^results(?:-\d+)?\.jtl$/;
@@ -55,7 +56,9 @@ export function createRunService({
   config,
   docker = defaultDocker,
   agents = null,
-  notify = sendRunNotification
+  notify = sendRunNotification,
+  insight = analyzeWithPerfInsight,
+  insightSettings = perfInsightSettings()
 }) {
   const notifications = notificationSettings();
 
@@ -81,9 +84,10 @@ export function createRunService({
     return result.rows[0] || null;
   }
 
+  // Records the result. Returns the finished run (with results_dir) for followUpRun, or null.
   async function finishRun(runId, exitCode, errorMessage = null) {
     const runResult = await pool.query('SELECT results_dir, slo FROM test_runs WHERE run_id = $1', [runId]);
-    if (!runResult.rowCount) return;
+    if (!runResult.rowCount) return null;
 
     let summary = null;
     let failure = errorMessage;
@@ -103,21 +107,60 @@ export function createRunService({
       }
     }
 
+    const newStatus = exitCode === 0 && !failure ? 'completed' : 'failed';
+    // Completed runs are queued for the perf-insight regression check (if configured), so the
+    // CI gate knows to wait for the verdict.
+    const pendingInsight = insightSettings.enabled && newStatus === 'completed' ? { status: 'pending' } : null;
     const updated = await pool.query(
       `UPDATE test_runs
        SET status = CASE WHEN status = 'aborted' THEN status ELSE $2 END,
            ended_at = COALESCE(ended_at, now()), exit_code = $3,
-           error = COALESCE(error, $4), summary = $5, slo_result = $6
+           error = COALESCE(error, $4), summary = $5, slo_result = $6,
+           insight = CASE WHEN status = 'aborted' THEN insight ELSE $7 END
        WHERE run_id = $1 AND status IN ('starting', 'running', 'aborted')
-       RETURNING run_id, scenario_name, status, users, duration_seconds, started_at, ended_at, error,
-                 summary, slo, slo_result`,
-      [runId, exitCode === 0 && !failure ? 'completed' : 'failed', exitCode, failure, summary, sloResult]
+       RETURNING ${RUN_COLUMNS}, results_dir`,
+      [runId, newStatus, exitCode, failure, summary, sloResult, pendingInsight]
     );
-    if (updated.rowCount) {
-      notify(updated.rows[0], { settings: notifications }).catch((error) => {
-        console.error(`Run notification failed for ${runId}: ${error.message}`);
-      });
+    return updated.rowCount ? updated.rows[0] : null;
+  }
+
+  // After a run is recorded: perf-insight regression check (when queued), then the notification,
+  // so the message can include the verdict. Neither can change the run's own status.
+  async function followUpRun(finished) {
+    if (!finished) return;
+    const { results_dir: resultsDir, ...run } = finished;
+    if (run.insight?.status === 'pending') {
+      let result;
+      try {
+        result = await insight(run, { resultsDir, settings: insightSettings });
+      } catch (error) {
+        result = { status: 'error', error: `perf-insight: ${error.message}` };
+      }
+      run.insight = result || { status: 'error', error: 'perf-insight returned no result.' };
+      await pool
+        .query('UPDATE test_runs SET insight = $2 WHERE run_id = $1', [run.run_id, run.insight])
+        .catch((error) => console.error(`Could not save perf-insight result for ${run.run_id}: ${error.message}`));
+      if (run.insight.status === 'error')
+        console.error(`perf-insight check failed for ${run.run_id}: ${run.insight.error}`);
     }
+    await notify(run, { settings: notifications }).catch((error) => {
+      console.error(`Run notification failed for ${run.run_id}: ${error.message}`);
+    });
+  }
+
+  // Re-runs the perf-insight check for a finished run (API: POST /api/runs/:id/insight).
+  async function reanalyzeRun(runId) {
+    if (!insightSettings.enabled) throw httpError(409, 'perf-insight is not configured (set PERF_INSIGHT_URL).');
+    const result = await pool.query(`SELECT ${RUN_COLUMNS}, results_dir FROM test_runs WHERE run_id = $1`, [runId]);
+    if (!result.rowCount) throw httpError(404, 'Run not found.');
+    const { results_dir: resultsDir, ...run } = result.rows[0];
+    if (run.status !== 'completed') throw httpError(409, 'Only completed runs can be checked by perf-insight.');
+    const outcome = (await insight(run, { resultsDir, settings: insightSettings })) || {
+      status: 'error',
+      error: 'perf-insight returned no result.'
+    };
+    await pool.query('UPDATE test_runs SET insight = $2 WHERE run_id = $1', [runId, outcome]);
+    return outcome;
   }
 
   function executorFor(execution) {
@@ -152,8 +195,9 @@ export function createRunService({
         }
       })
     );
+    let finished = null;
     try {
-      await finishRun(runId, exitCode, errorMessage);
+      finished = await finishRun(runId, exitCode, errorMessage);
     } finally {
       await pool.query("UPDATE test_runs SET container_ids = '{}' WHERE run_id = $1", [runId]);
       for (const handle of handles) {
@@ -162,6 +206,7 @@ export function createRunService({
         });
       }
     }
+    await followUpRun(finished);
   }
 
   function watchSlo(run, startedAt) {
@@ -246,7 +291,7 @@ export function createRunService({
         await executor.stop(handle).catch(() => {});
         await executor.remove(handle).catch(() => {});
       }
-      await finishRun(run.run_id, 1, error.message);
+      await followUpRun(await finishRun(run.run_id, 1, error.message));
     } finally {
       watcher?.stop();
     }
@@ -388,7 +433,9 @@ export function createRunService({
         const executor = executorFor(run.execution);
         const handles = await executor.find(run.run_id);
         if (!handles.length) {
-          await finishRun(run.run_id, 1, 'No matching JMeter container was found during application recovery.');
+          await followUpRun(
+            await finishRun(run.run_id, 1, 'No matching JMeter container was found during application recovery.')
+          );
           continue;
         }
         await pool.query("UPDATE test_runs SET status = 'running', container_ids = $2 WHERE run_id = $1", [
@@ -407,5 +454,5 @@ export function createRunService({
     }
   }
 
-  return { startRun, abortRun, finishRun, recoverActiveRuns, findMatchingBaseline };
+  return { startRun, abortRun, finishRun, followUpRun, reanalyzeRun, recoverActiveRuns, findMatchingBaseline };
 }
