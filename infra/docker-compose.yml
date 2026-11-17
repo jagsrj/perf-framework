@@ -27,7 +27,7 @@ services:
       retries: 20
 
   grafana:
-    image: grafana/grafana@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
     volumes:
       - grafana_data_v2:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
